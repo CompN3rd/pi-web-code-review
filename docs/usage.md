@@ -1,8 +1,10 @@
-# Intended Code Review workflow
+# Code Review workflow
 
-**Pending release verification:** this source targets main's composer-chip API, not the published PI WEB `1.202610.1` package. Do not install this revision yet. Complete the [release gate](composer-design.md#release-gate) first; the instructions below describe the intended workflow afterward.
+Version **0.1.0** requires **PI WEB >=1.202610.3**. Automated tests, builds, and artifact smoke checks passed against `1.202610.3`; lint cleanup and live-host testing remain outstanding. See [compatibility results](compatibility.md) for the validation limits.
 
-## Install the standalone package after verification
+## Install the standalone package
+
+Once published, install `npm:pi-web-code-review` through **Settings → Pi packages** on the target machine. Enable the plugin and restart safely as described below. To build and install locally:
 
 Build from this repository's root:
 

@@ -157,7 +157,7 @@ describe("standalone Review panel", () => {
     await vi.waitFor(() => { expect(button(panel, "Attach review to composer").disabled).toBe(false); });
     const pending = deferred<Comment[]>(); const read = vi.spyOn(store, "load").mockReturnValueOnce(pending.promise);
     button(panel, "Attach review to composer").click(); expect(read).toHaveBeenCalledOnce();
-    const next = context(); const session = required(next.state.selectedSession);
+    const next = context(); const session = required(next.state?.selectedSession);
     if (change === "session" || change === "away and back") next.state = { ...next.state, selectedSession: { ...session, id: "other" } };
     if (change === "pending") next.state = { ...next.state, selectedSession: { ...session, pending: true } };
     if (change === "archived") next.state = { ...next.state, selectedSession: { ...session, archived: true } };

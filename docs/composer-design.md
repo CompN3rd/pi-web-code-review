@@ -4,9 +4,9 @@
 
 Target the public API on `jmfederico/pi-web` main at `830dc179`, including composer chips introduced in `02d24ec6`. The source imports `PluginPromptChip` directly from `@jmfederico/pi-web/plugin-api`; it does not recreate the missing API through a local shim or access private host code.
 
-The development dependency remains pinned to the last published package, `1.202610.1`, until a supporting release exists. **That pin does not supply the new declarations: typecheck, build, and package verification are pending the dependency update.** No speculative next version or Git dependency is used. The previous integration's passing checks do not validate this design. Generated output from that older implementation has been removed to avoid installing stale artifacts.
+The development dependency accepts PI WEB `>=1.202610.3`; compatibility was checked against published `1.202610.3`. Composer chips shipped in `1.202610.2`; the `1.202610.3` public declarations match this design. No speculative version, Git dependency, or local shim is used. Typechecking, all 63 tests, builds, and unpacked/packed artifact smoke checks pass. Full verification remains blocked by lint errors. See [compatibility results](compatibility.md).
 
-The package is `private: true`. Runtime testing, build/artifact testing, and installation are deliberately deferred at the user's request. This document records the intended contract, not a claim of verified compatibility with a published package.
+The initial `0.1.0` release is enabled for publication. Lint cleanup and live-host checks remain follow-up work rather than publication gates. Live-host runtime testing and installation are still deferred; the checks above validate declarations and standalone artifacts, not end-to-end send admission in a running host.
 
 Reference: [upstream composer documentation](https://github.com/jmfederico/pi-web/blob/830dc179/docs/plugins.md#attach-text-context-to-a-message).
 
@@ -43,12 +43,12 @@ Acceptance means prompt admission by the server, not that the assistant complete
 
 ## Release gate
 
-After upstream publishes the supporting package:
+Current progress against published PI WEB `1.202610.3`:
 
-1. Confirm its public declarations include `PluginPromptChip` and the documented `setChip`/`removeChip` lifecycle. Update the exact development dependency pin and lockfile to that real version.
+1. Confirm its public declarations include `PluginPromptChip` and the documented `setChip`/`removeChip` lifecycle. Declare the supported minimum as `>=1.202610.3` and retain a concrete resolved version in the lockfile.
 2. Re-read the published contract and reconcile any differences from the recorded main revision. Do not assume main's design is frozen.
-3. Run `npm run verify` at the package root, followed by an actual packed-package smoke check. Unit/DOM cases have been converted to the async store and prepared for the new contract but have **not** been run. The dev-only `fake-indexeddb` factory exercises the actual adapter on two connections, transaction aborts, migration precedence/empty markers, and open retry/late-success cleanup. No dependencies were installed as part of preparing these tests; only package metadata/lockfile were updated.
+3. Run `npm run verify` at the package root, followed by an actual packed-package smoke check. All 63 unit/DOM cases have passed, as have unpacked and packed artifact smoke checks. Fix the 38 lint errors before claiming full `verify` success. The dev-only `fake-indexeddb` factory exercises the actual adapter on two connections, transaction aborts, migration precedence/empty markers, and open retry/late-success cleanup. Dependencies were installed with `--ignore-scripts`; no host installation or daemon restart was performed.
 4. In a separate test installation, exercise successful and failed sends, chips-only messages, steer/follow-up, selection changes, repeat attachment during an in-flight send, local edits/deletes, simultaneous two-tab saves/acknowledgements, failed/blocked/corrupt migration, retained legacy backups, persistent storage/acknowledgement warnings across remounts, async navigation/disposal, LAN HTTP without Web Locks, BroadcastChannel failure, Git with `diff.submodule=diff`, reload/restaging, disabled-plugin cleanup, and remote-machine scoping. Confirm the server-accepted callback clears only the correct saved feedback. Do not restart the developer's active session daemon as part of this check.
-5. Document the minimum verified host release, remove the pending notices, and only then consider enabling publication by removing `private` and choosing an available package name.
+5. Publication is enabled for version `0.1.0` as `pi-web-code-review`, with PI WEB `>=1.202610.3` supported. Keep outstanding validation documented and address discovered defects in patch releases.
 
 There is no scheduled release watcher or automatic installation/restart associated with this gate.
