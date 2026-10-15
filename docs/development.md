@@ -6,9 +6,9 @@ This repository starts from the plugin snapshot in [CompN3rd/pi-web at `d0c7a212
 
 ## Verification status
 
-The development dependency accepts PI WEB `>=1.202610.3`, which includes the public composer-chip API. The lockfile records the concrete version used for reproducible development. There are no local replacement declarations. Typechecking, all 63 tests, the build, and unpacked/packed artifact smoke checks pass. Full `verify` remains blocked by 38 lint errors; live-host testing is still pending. See [compatibility results](compatibility.md).
+The development dependency accepts PI WEB `>=1.202610.3`, which includes the public composer-chip API. The lockfile records the concrete version used for reproducible development. There are no local replacement declarations. Typechecking, all 63 tests, the build, and unpacked/packed artifact smoke checks pass. Full `verify` passes; live-host testing is still pending. See [compatibility results](compatibility.md).
 
-The initial `0.1.0` release is enabled for publication with lint cleanup and live-host testing tracked as follow-up work in the [validation checklist](composer-design.md#release-gate). Reproduce validation with:
+The initial `0.1.0` release is enabled for publication with live-host testing tracked as follow-up work in the [validation checklist](composer-design.md#release-gate). Reproduce validation with:
 
 ```sh
 npm ci --ignore-scripts

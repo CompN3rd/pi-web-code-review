@@ -17,7 +17,7 @@ class TestChannel {
   constructor(readonly name: string) { TestChannel.peers.add(this); }
   postMessage(data: unknown) {
     for (const peer of TestChannel.peers) {
-      if (peer !== this && peer.name === this.name) queueMicrotask(() => { peer.onmessage?.({ data } as MessageEvent<unknown>); });
+      if (peer !== this && peer.name === this.name) queueMicrotask(() => { peer.onmessage?.(new MessageEvent("message", { data })); });
     }
   }
   close() { TestChannel.peers.delete(this); this.onmessage = null; }
@@ -33,6 +33,11 @@ afterEach(() => {
 });
 function required<T>(value: T | undefined | null): T {
   if (value == null) throw new Error("Missing UI fixture"); return value;
+}
+function reviewPanel(host: HTMLElement): ReviewPanel {
+  const panel = host.firstElementChild;
+  if (!(panel instanceof ReviewPanel)) throw new Error("Review panel missing");
+  return panel;
 }
 function button(panel: ReviewPanel, text: string): HTMLButtonElement {
   return required([...panel.shadowRoot?.querySelectorAll("button") ?? []].find((candidate) => candidate.textContent.trim() === text));
@@ -143,13 +148,13 @@ describe("standalone Review panel", () => {
     expect(host.firstElementChild).toBe(panel);
     if (outcome === "success") {
       pending.resolve([savedComment]);
-      await vi.waitFor(() => { expect(ctx.prompt.setChip).toHaveBeenCalledOnce(); });
+      await vi.waitFor(() => { expect(vi.spyOn(ctx.prompt, "setChip")).toHaveBeenCalledOnce(); });
     } else {
       pending.reject(new Error("attach read unavailable"));
       await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("attach read unavailable"); });
-      expect(ctx.prompt.setChip).not.toHaveBeenCalled();
+      expect(vi.spyOn(ctx.prompt, "setChip")).not.toHaveBeenCalled();
     }
-    expect(fresh.prompt.setChip).not.toHaveBeenCalled(); // Never redirect to the new facade.
+    expect(vi.spyOn(fresh.prompt, "setChip")).not.toHaveBeenCalled(); // Never redirect to the new facade.
   });
   it.each(["session", "pending", "archived", "workspace", "machine", "project", "away and back"])("cancels pending attachment on a real selection change: %s", async (change) => {
     const { panel, ctx, host, contribution } = await mount();
@@ -167,7 +172,7 @@ describe("standalone Review panel", () => {
     render(contribution.render(next), host);
     if (change === "away and back") render(contribution.render(ctx), host);
     pending.resolve([savedComment]); await pending.promise; await panel.updateComplete; await panel.updateComplete;
-    expect(ctx.prompt.setChip).not.toHaveBeenCalled(); expect(next.prompt.setChip).not.toHaveBeenCalled();
+    expect(vi.spyOn(ctx.prompt, "setChip")).not.toHaveBeenCalled(); expect(vi.spyOn(next.prompt, "setChip")).not.toHaveBeenCalled();
   });
   it.each(["save", "delete"])("routes a detached %s rejection to A after returning from B", async (operation) => {
     const { panel, ctx, host, contribution } = await mount();
@@ -185,16 +190,16 @@ describe("standalone Review panel", () => {
     button(panel, operation === "save" ? "Save comment" : "Remove comment").click(); expect(mutation).toHaveBeenCalledOnce();
     const other = context(); other.workspace = { ...other.workspace, id: "other" };
     render(contribution.render(other), host);
-    const otherPanel = host.firstElementChild as ReviewPanel; await otherPanel.updateComplete;
+    const otherPanel = reviewPanel(host); await otherPanel.updateComplete;
     render(contribution.render(ctx), host);
-    const remounted = host.firstElementChild as ReviewPanel; await remounted.updateComplete;
+    const remounted = reviewPanel(host); await remounted.updateComplete;
     expect(remounted).not.toBe(panel); expect(panel.isConnected).toBe(false);
     pending.reject(new Error(`${operation} failed after return`));
     await vi.waitFor(() => { expect(remounted.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain(`${operation} failed after return`); });
     expect(otherPanel.shadowRoot?.textContent).not.toContain(`${operation} failed after return`);
     button(remounted, "Dismiss feedback warning").click(); await remounted.updateComplete;
     render(contribution.render(other), host); render(contribution.render(ctx), host);
-    const again = host.firstElementChild as ReviewPanel; await again.updateComplete;
+    const again = reviewPanel(host); await again.updateComplete;
     expect(again.shadowRoot?.textContent).not.toContain(`${operation} failed after return`);
   });
   it("keeps first-mount storage failures visible across source refresh and workspace remount", async () => {
@@ -208,7 +213,7 @@ describe("standalone Review panel", () => {
     const other = context(); other.workspace = { ...other.workspace, id: "other" };
     render(contribution.render(other), host);
     render(contribution.render(ctx), host);
-    const remounted = host.firstElementChild as ReviewPanel; await remounted.updateComplete;
+    const remounted = reviewPanel(host); await remounted.updateComplete;
     expect(remounted.shadowRoot?.textContent).toContain(warning);
   });
   it("keeps acknowledgement failure visible after navigation, remount and successful source loads", async () => {
@@ -219,12 +224,12 @@ describe("standalone Review panel", () => {
     button(panel, "Attach review to composer").click();
     await vi.waitFor(() => { expect(staged).toHaveBeenCalledOnce(); });
     const failure = vi.spyOn(store, "removeUnchanged").mockRejectedValueOnce(new Error("quota"));
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "error").mockImplementation(() => { /* Suppress expected failure logging. */ });
     const other = context(); other.workspace = { ...other.workspace, id: "other" };
     render(contribution.render(other), host);
     await expect(required(staged.mock.calls[0]?.[0]).onRemove?.("submitted")).rejects.toThrow("quota");
     render(contribution.render(ctx), host);
-    const remounted = host.firstElementChild as ReviewPanel; await remounted.updateComplete;
+    const remounted = reviewPanel(host); await remounted.updateComplete;
     await open(remounted); button(remounted, "Refresh").click(); await remounted.updateComplete;
     expect(remounted.shadowRoot?.textContent).toContain("saved feedback could not be cleared");
     expect(await store.load(workspaceKey(ctx))).toEqual([savedComment]);
@@ -237,7 +242,7 @@ describe("standalone Review panel", () => {
     await vi.waitFor(() => { expect(button(panel, "Attach review to composer").disabled).toBe(false); });
     button(panel, "Attach review to composer").click();
     await vi.waitFor(() => { expect(staged).toHaveBeenCalledOnce(); });
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => { /* Suppress expected failure logging. */ });
     vi.spyOn(store, "removeUnchanged").mockRejectedValue(new Error("storage inaccessible"));
     const reads = vi.spyOn(store, "load").mockRejectedValue(new Error("feedback reads inaccessible"));
     const warning = "The review was accepted, but saved feedback could not be cleared. Check the conversation before attaching it again.";
@@ -253,7 +258,7 @@ describe("standalone Review panel", () => {
     expect(staged).toHaveBeenCalledOnce();
     const other = context(); other.workspace = { ...other.workspace, id: "other" };
     render(contribution.render(other), host); render(contribution.render(ctx), host);
-    const remounted = host.firstElementChild as ReviewPanel; await remounted.updateComplete;
+    const remounted = reviewPanel(host); await remounted.updateComplete;
     await open(remounted); button(remounted, "Refresh").click(); await remounted.updateComplete;
     await vi.waitFor(() => { expect(remounted.shadowRoot?.textContent).toContain("feedback reads inaccessible"); });
     expect(remounted.shadowRoot?.textContent).toContain(warning);
@@ -267,7 +272,7 @@ describe("standalone Review panel", () => {
     expect(remounted.shadowRoot?.textContent).not.toContain(warning);
     expect(remounted.shadowRoot?.textContent).not.toContain(actionError);
     render(contribution.render(other), host); render(contribution.render(ctx), host);
-    const again = host.firstElementChild as ReviewPanel; await again.updateComplete;
+    const again = reviewPanel(host); await again.updateComplete;
     expect(again.shadowRoot?.textContent).not.toContain(warning);
     expect(again.shadowRoot?.textContent).not.toContain(actionError);
     expect(again.shadowRoot?.textContent).not.toContain("feedback reads inaccessible");
@@ -291,7 +296,7 @@ describe("standalone Review panel", () => {
     cleanups.push(() => { lifetime.abort(); void activation.dispose?.(new AbortController().signal); });
     const contribution = required(activation.contributions.workspacePanels?.[0]);
     contribution.badge?.(ctx);
-    await vi.waitFor(() => { expect(ctx.host.requestRender).toHaveBeenCalled(); });
+    await vi.waitFor(() => { expect(vi.spyOn(ctx.host, "requestRender")).toHaveBeenCalled(); });
     expect(contribution.badge?.(ctx)).toBeUndefined();
   });
   it("refreshes remote badges and withdraws chips without self-cancelling local attachments", async () => {
@@ -302,10 +307,10 @@ describe("standalone Review panel", () => {
     await vi.waitFor(() => { expect(second.panel.shadowRoot?.textContent).toContain("Saved comments (1)"); });
     await vi.waitFor(() => { expect(first.contribution.badge?.(first.ctx)).toBe(1); });
     button(first.panel, "Attach review to composer").click();
-    await vi.waitFor(() => { expect(first.ctx.prompt.setChip).toHaveBeenCalledOnce(); });
-    expect(first.ctx.prompt.removeChip).not.toHaveBeenCalled();
+    await vi.waitFor(() => { expect(vi.spyOn(first.ctx.prompt, "setChip")).toHaveBeenCalledOnce(); });
+    expect(vi.spyOn(first.ctx.prompt, "removeChip")).not.toHaveBeenCalled();
     await required(second.panel.store).update(key, { ...savedComment, body: "remote edit" });
-    await vi.waitFor(() => { expect(first.ctx.prompt.removeChip).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => { expect(vi.spyOn(first.ctx.prompt, "removeChip")).toHaveBeenCalledOnce(); });
     await vi.waitFor(() => { expect(first.panel.shadowRoot?.textContent).toContain("remote edit"); });
   });
   it("never renders executable Markdown or remote images", () => {

@@ -22,7 +22,7 @@ async function fixture() {
   return { ctx, key, store, storage, chips, last, remove, notify };
 }
 
-describe("main's composer-chip contract (release verification pending)", () => {
+describe("published composer-chip contract", () => {
   it("stages a stable workspace chip without touching prompt text or deleting feedback", async () => {
     const { ctx, key, store, chips, last } = await fixture();
     const insert = vi.fn(); ctx.prompt.insertText = insert;
@@ -113,26 +113,26 @@ describe("main's composer-chip contract (release verification pending)", () => {
   it("checks replacement ownership when a queued acknowledgement transaction actually runs", async () => {
     const { ctx, key, store, chips, last } = await fixture();
     await chips.attach(ctx); const first = last();
-    const gate = deferred<void>();
+    const gate = deferred<undefined>();
     const remove = store.removeUnchanged.bind(store);
     const spy = vi.spyOn(store, "removeUnchanged").mockImplementationOnce(async (...args) => {
       await gate.promise; return remove(...args);
     });
     const accepted = first.onRemove?.("submitted");
-    await chips.attach(ctx); gate.resolve(); await accepted;
+    await chips.attach(ctx); gate.resolve(undefined); await accepted;
     spy.mockRestore();
     expect(await store.load(key)).toEqual([savedComment]);
   });
   it("retains data and suppresses notification when disposed with acknowledgement pending", async () => {
     const { ctx, key, store, chips, last, notify } = await fixture();
     await chips.attach(ctx);
-    const gate = deferred<void>();
+    const gate = deferred<undefined>();
     const remove = store.removeUnchanged.bind(store);
     const spy = vi.spyOn(store, "removeUnchanged").mockImplementationOnce(async (...args) => {
       await gate.promise; return remove(...args);
     });
     const accepted = last().onRemove?.("submitted");
-    chips.dispose(); notify.mockClear(); gate.resolve(); await accepted;
+    chips.dispose(); notify.mockClear(); gate.resolve(undefined); await accepted;
     spy.mockRestore();
     expect(await store.load(key)).toEqual([savedComment]);
     expect(notify).not.toHaveBeenCalled();

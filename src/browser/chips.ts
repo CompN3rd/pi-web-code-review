@@ -106,22 +106,24 @@ export class ReviewChips {
   private async settle(attachment: Attachment, reason: "user" | "submitted"): Promise<void> {
     // A replaced chip's submitted callback still belongs to its older snapshot.
     // Do not forget the newer attachment, or delete feedback edited in flight.
-    if (this.disposed) return;
-    let replaced = false;
+    // Read live state through functions: callbacks and awaits can change it.
+    const isDisposed = () => this.disposed;
+    const outcome = { replaced: false };
+    if (isDisposed()) return;
     try {
       if (reason === "submitted") await this.store.removeUnchanged(attachment.workspace, attachment.comments, () => {
         const current = this.attachments.get(attachment.target);
-        replaced = current !== undefined && current !== attachment;
-        return !this.disposed && !replaced;
+        outcome.replaced = current !== undefined && current !== attachment;
+        return !isDisposed() && !outcome.replaced;
       });
-      if (this.disposed) return;
+      if (isDisposed()) return;
       if (this.attachments.get(attachment.target) === attachment) this.attachments.delete(attachment.target);
       this.notify(attachment.workspace, reason === "submitted"
-        ? replaced ? "An earlier review was accepted. The newer attached review and saved comments were retained."
+        ? outcome.replaced ? "An earlier review was accepted. The newer attached review and saved comments were retained."
           : "Review accepted by the server. Unchanged submitted comments were cleared; later edits were retained."
         : "Review detached from the composer. Saved comments were retained.");
     } catch (error) {
-      if (!this.disposed) this.notify(attachment.workspace, "The review was accepted, but saved feedback could not be cleared. Check the conversation before attaching it again.", error, "acceptance");
+      if (!isDisposed()) this.notify(attachment.workspace, "The review was accepted, but saved feedback could not be cleared. Check the conversation before attaching it again.", error, "acceptance");
       throw error; // The host also logs callback failures with the plugin owner identity.
     }
   }

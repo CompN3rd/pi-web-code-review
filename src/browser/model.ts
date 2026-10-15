@@ -58,7 +58,7 @@ export class ReviewStore {
       let value = stored;
       if (value === undefined) {
         const raw = this.legacy.getItem(storagePrefix + key);
-        value = raw === null ? { version: 1, comments: [] } : JSON.parse(raw) as unknown;
+        value = raw === null ? { version: 1, comments: [] } : JSON.parse(raw);
       }
       if (!record(value) || value["version"] !== 1 || !Array.isArray(value["comments"])) throw new Error("Unrecognized review storage; existing data was retained");
       const items: unknown[] = value["comments"];

@@ -16,7 +16,7 @@ Open the **Review** tab, choose workspace files or Git changes, and save line-ra
 
 ## Validation status
 
-Typechecking, all 63 tests, builds, and unpacked/packed artifact smoke checks passed against PI WEB `1.202610.3`. Full verification remains blocked by lint errors, and live-host acceptance testing is pending. Publication is enabled for the initial release; these remaining checks are follow-up work, not claims of completed validation.
+Typechecking, all 63 tests, builds, and unpacked/packed artifact smoke checks passed against PI WEB `1.202610.3`. Full automated verification passes; live-host acceptance testing is pending. Publication is enabled for the initial release; these remaining checks are follow-up work, not claims of completed validation.
 
 See the [composer design](docs/composer-design.md), [usage guide](docs/usage.md), [development guide](docs/development.md), and [compatibility results](docs/compatibility.md).
 

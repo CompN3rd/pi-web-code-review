@@ -1,6 +1,6 @@
 /** IndexedDB serializes read/modify/write across every tab on this origin. */
 export interface ReviewStorage {
-  transact<T>(key: string, change: (value: unknown | undefined) => { value: unknown; result: T }): Promise<T>;
+  transact<T>(key: string, change: (value: unknown) => { value: unknown; result: T }): Promise<T>;
 }
 
 export class IndexedDBReviewStorage implements ReviewStorage {
@@ -9,7 +9,7 @@ export class IndexedDBReviewStorage implements ReviewStorage {
 
   constructor(
     private readonly factory: IDBFactory,
-    private readonly committed: (key: string) => void = () => {},
+    private readonly committed: (key: string) => void = () => { /* Notifications are optional. */ },
     private readonly name = "pi-web-code-review",
   ) {}
 
@@ -19,7 +19,7 @@ export class IndexedDBReviewStorage implements ReviewStorage {
     const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = this.factory.open(this.name, 1);
       let failed = false;
-      const fail = (error: unknown) => { failed = true; reject(error); };
+      const fail = (error: Error) => { failed = true; reject(error); };
       request.onupgradeneeded = () => {
         if (failed || this.disposed) { request.transaction?.abort(); return; }
         request.result.createObjectStore("workspaces");
@@ -39,14 +39,14 @@ export class IndexedDBReviewStorage implements ReviewStorage {
     return opening;
   }
 
-  async transact<T>(key: string, change: (value: unknown | undefined) => { value: unknown; result: T }): Promise<T> {
+  async transact<T>(key: string, change: (value: unknown) => { value: unknown; result: T }): Promise<T> {
     const database = await this.open();
     if (this.disposed) throw new Error("Review storage is closed");
     return new Promise<T>((resolve, reject) => {
       const transaction = database.transaction("workspaces", "readwrite");
       const store = transaction.objectStore("workspaces");
       let result: T;
-      let failure: unknown;
+      let failure: Error | undefined;
       let changed = false;
       transaction.onabort = () => { reject(failure ?? transaction.error ?? new Error("Review storage transaction aborted")); };
       transaction.oncomplete = () => {
@@ -67,13 +67,13 @@ export class IndexedDBReviewStorage implements ReviewStorage {
             store.put(next.value, key);
             changed = true;
           }
-        } catch (error) { failure = error; transaction.abort(); }
+        } catch (error) { failure = error instanceof Error ? error : new Error("Review storage mutation failed", { cause: error }); transaction.abort(); }
       };
     });
   }
 
   dispose(): void {
     this.disposed = true;
-    void this.database?.then((database) => { database.close(); }, () => {});
+    void this.database?.then((database) => { database.close(); }, () => { /* A failed open has no connection to close. */ });
   }
 }

@@ -31,30 +31,23 @@ After `npm ci --ignore-scripts`:
 | Check | Result |
 | --- | --- |
 | `npm run typecheck` | Passed |
-| `npm run lint` | Failed: 38 errors |
+| `npm run lint` | Passed |
 | `npm test` | Passed: 5 files, 63 tests |
 | `npm run build` | Passed |
 | `npm run check:artifacts` | Passed |
 | `npm pack` and smoke check of extracted package | Passed |
-| `npm run verify` | Blocked at lint |
+| `npm run verify` | Passed |
 | Live-host send/acceptance, remote machines, real browser storage failures | Not exercised |
 
 The artifact harness activates the built browser/server entries with mocked host contexts and a DOM/IndexedDB harness. Passing it does not establish live host registration or end-to-end send behavior.
 
-### Lint blockers
+### Lint cleanup
 
-These are in the previously unverified implementation/tests, rather than evidence of a host API break:
-
-- `src/browser/chips.ts`: 3 condition-narrowing errors around asynchronous disposal and callback-mutated replacement ownership. Preserve those runtime checks when fixing the lint findings; TypeScript does not model mutations across callbacks/awaits reliably.
-- `src/browser/model.ts`: 1 unnecessary type assertion on parsed storage.
-- `src/browser/storage.ts`: 6 errors concerning redundant `unknown | undefined`, empty callbacks, and non-Error rejection types.
-- `test/chips.test.ts`: 2 invalid `void` type-argument usages in deferred fixtures.
-- `test/panel.test.ts`: 19 errors concerning assertions, empty callbacks, and mock-method references.
-- `test/storage.test.ts`: 7 errors concerning assertions, empty callbacks, and mock-method references.
+All 38 original lint findings are resolved. Async disposal and callback-mutated ownership checks are preserved through live-state reads. Storage rejects with Error instances (retaining non-Error exceptions as causes), and tests use runtime-checked panel fixtures, real event/request objects, and explicit mock spies. The deliberately unbound IndexedDB method has a local lint exemption because its receiver is explicitly supplied with `.call`.
 
 ## Remaining release work
 
-1. Resolve lint without weakening the storage/ownership guards, then rerun full `verify` and packed smoke checks.
+1. Automated verification and packed smoke checks pass after lint cleanup; storage/ownership guards remain in place.
 2. Complete the separate live-host checklist in [the release gate](composer-design.md#release-gate), especially successful/failed/chips-only sends, steer/follow-up, replacement during Send, selection changes, two-tab acknowledgements, and remote scoping. The newest host also adds pending-message controls; confirm locally queued messages do not clear saved feedback before server admission.
 3. The declared host range is `>=1.202610.3`. Only `1.202610.3` was checked here; later versions are allowed but have not been independently verified.
 4. Publication is enabled for the initial `0.1.0` release as `pi-web-code-review`. The remaining validation is follow-up work; discovered defects will be addressed in patch releases.
