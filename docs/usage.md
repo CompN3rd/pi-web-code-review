@@ -4,7 +4,7 @@ Version **0.1.1** requires **PI WEB >=1.202610.3**. Automated tests, builds, and
 
 ## Install the standalone package
 
-Once published, install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine. If migrating from the unscoped package, disable/remove that plugin first; do not enable both copies. The plugin ID and storage keys are unchanged. Enable the scoped plugin and restart safely as described below. To build and install locally:
+Install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine. If migrating from the unscoped package, disable/remove that plugin first; do not enable both copies. The plugin ID and storage keys are unchanged. Enable the scoped plugin and restart safely as described below. To build and install locally:
 
 Build from this repository's root:
 

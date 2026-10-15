@@ -52,4 +52,4 @@ All 38 original lint findings are resolved. Async disposal and callback-mutated 
 3. The declared host range is `>=1.202610.3`. Only `1.202610.3` was checked here; later versions are allowed but have not been independently verified.
 4. Publication is enabled for the `0.1.1` patch release as `@compn3rd/pi-web-code-review`. The remaining validation is follow-up work; discovered defects will be addressed in patch releases.
 
-No plugin was installed into the live PI WEB instance, no daemon was restarted, and no package was published.
+Automated verification did not install the plugin into a live PI WEB instance or restart a daemon. Live-host testing remains separate from package publication.

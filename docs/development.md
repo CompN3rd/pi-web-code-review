@@ -23,8 +23,8 @@ Prepared cases cover actual adapter serialization on two IndexedDB connections, 
 ## Boundaries
 
 - The frontend stores workspace-scoped comments and delegates staging/acknowledgement to `ReviewChips`. Only public `prompt.setChip`/`prompt.removeChip` methods are used for handoff; prompt insertion and the provisional selection-service shim have been removed.
-- The backend accepts only read-only `changes` and `diff` operations, runs argv-based Git through the host's bounded executor with the request signal, and uses the host-resolved workspace. Literal pathspecs, disabled external diff/textconv drivers, forced short submodule diffs, and output/path bounds keep this surface narrow.
+- The backend accepts only read-only `compare`, `changes`, and `diff` operations, runs argv-based Git through the host's bounded executor with the request signal, and uses the host-resolved workspace. Literal pathspecs, disabled external diff/textconv drivers, forced short submodule diffs, and output/path bounds keep this surface narrow.
 - The Markdown renderer is adapted from PI WEB's MIT-licensed Captain's Log example. It renders known lexer tokens through Lit text bindings, not unsafe HTML.
 - Browser dependencies are bundled under `dist/browser`; server JavaScript remains outside that public directory. The whole plugin can be built separately from the host after the dependency gate is satisfied.
 
-Version `0.1.1` is prepared for publication as `@compn3rd/pi-web-code-review`; the package is no longer private. Preparing release metadata does not publish it. Do not publish the PI WEB host to ship this plugin.
+Version `0.1.1` is packaged for public npm distribution as `@compn3rd/pi-web-code-review`. Release publication is separate from host installation and activation. Do not publish the PI WEB host to ship this plugin.

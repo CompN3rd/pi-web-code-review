@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — prepared release
+## 0.1.1 — 2026-10-15
 
 Package: **`@compn3rd/pi-web-code-review`** (public npm scope).
 
@@ -13,7 +13,7 @@ Package: **`@compn3rd/pi-web-code-review`** (public npm scope).
 
 ### Changed
 
-- Prepare publication under the `@compn3rd` scope instead of the unscoped package name. Once published, install with `npm:@compn3rd/pi-web-code-review` in PI WEB's Pi packages settings.
+- Distribute under the `@compn3rd` scope instead of the unscoped package name. Install with `npm:@compn3rd/pi-web-code-review` in PI WEB's Pi packages settings.
 - Use a theme-aware magnifying glass icon for the Review panel.
 - Update the supported PI WEB minimum to `1.202610.3`, matching the published composer-chip API.
 - Resolve all 38 typed lint findings while retaining asynchronous disposal and attachment-ownership guards.
@@ -27,4 +27,4 @@ Package: **`@compn3rd/pi-web-code-review`** (public npm scope).
 - Automated verification covers typechecking, lint, 82 tests, browser/server builds, and unpacked/packed artifact smoke checks.
 - Live-host send/acceptance and remote-machine acceptance testing remain pending; see [compatibility results](docs/compatibility.md).
 
-This is release preparation only. No npm publication, GitHub release, host installation, or daemon restart is performed by these changes.
+Installation and live-host acceptance testing are separate from publication. This release does not install the plugin into a running host or restart its daemon.

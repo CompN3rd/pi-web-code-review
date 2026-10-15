@@ -4,9 +4,9 @@ A standalone Review tab for workspace files, staged/unstaged Git changes, and ac
 
 ## Requirements and installation
 
-Prepared patch release: **0.1.1**. Requires **PI WEB >=1.202610.3**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Compatibility checks were performed against PI WEB `1.202610.3`; later releases are allowed but have not been independently tested.
+Patch release: **0.1.1**. Requires **PI WEB >=1.202610.3**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Compatibility checks were performed against PI WEB `1.202610.3`; later releases are allowed but have not been independently tested.
 
-Once published, install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine, then enable **Code Review** in **Settings → PI WEB plugins**. For local builds and manual installation, see the [usage guide](docs/usage.md).
+Install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine, then enable **Code Review** in **Settings → PI WEB plugins**. For local builds and manual installation, see the [usage guide](docs/usage.md).
 
 This package includes a server plugin: restart the target session daemon when safe, then reload the browser. Restarting interrupts active sessions and terminals; do it from outside the sessions that daemon hosts. Install the package on each remote machine where you want to review files.
 
