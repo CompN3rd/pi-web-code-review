@@ -1,11 +1,12 @@
 import type { WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { ReviewStorage } from "./storage.js";
-import { isGitSource, isWorkspacePath, record, type ReviewSource } from "../protocol.js";
+import { comparisonKey, isComparison, isGitSource, isWorkspacePath, record, type GitComparison, type ReviewSource } from "../protocol.js";
 
 export interface Anchor {
   path: string;
   source: ReviewSource;
+  comparison?: GitComparison;
   side: "old" | "new";
   start: number;
   end: number;
@@ -25,6 +26,7 @@ export interface Row {
 export interface Snapshot {
   path: string;
   source: ReviewSource;
+  comparison?: GitComparison;
   hash: string;
   rows: Row[];
 }
@@ -35,14 +37,16 @@ export function workspaceKey(context: Pick<WorkspacePanelContext, "machine" | "w
 }
 export function validAnchor(anchor: Anchor): boolean {
   return isWorkspacePath(anchor.path) && (anchor.source === "files" || isGitSource(anchor.source))
+    && (anchor.source === "git-compare" ? isComparison(anchor.comparison) : anchor.comparison === undefined)
     && (anchor.side === "new" || anchor.source !== "files")
     && Number.isSafeInteger(anchor.start) && Number.isSafeInteger(anchor.end) && anchor.start > 0 && anchor.end >= anchor.start;
 }
 function isComment(value: unknown): value is Comment {
   if (!record(value)) return false;
-  const { path, source, side, start, end, id, body, hash, createdAt } = value;
+  const { path, source, side, start, end, id, body, hash, createdAt, comparison } = value;
+  if (comparison !== undefined && !isComparison(comparison)) return false;
   return typeof path === "string" && (source === "files" || isGitSource(source)) && (side === "old" || side === "new")
-    && typeof start === "number" && typeof end === "number" && validAnchor({ path, source, side, start, end })
+    && typeof start === "number" && typeof end === "number" && validAnchor({ path, source, side, start, end, ...(comparison === undefined ? {} : { comparison }) })
     && typeof id === "string" && id !== "" && typeof body === "string" && body.trim() !== ""
     && typeof hash === "string" && /^[a-f0-9]{64}$/u.test(hash) && typeof createdAt === "number" && Number.isFinite(createdAt);
 }
@@ -96,12 +100,19 @@ export class ReviewStore {
 }
 
 function commentVersion(comment: Comment): string {
-  return JSON.stringify([comment.id, comment.path, comment.source, comment.side, comment.start, comment.end, comment.body, comment.hash, comment.createdAt]);
+  return JSON.stringify([comment.id, comment.path, comment.source, comment.side, comment.start, comment.end, comment.body, comment.hash, comment.createdAt, comparisonKey(comment.comparison)]);
 }
 
-export const sourceLabel = (source: ReviewSource): string => source === "files" ? "File" : source === "git-staged" ? "Git staged" : "Git unstaged";
+export function sourceLabel(source: ReviewSource, comparison?: GitComparison): string {
+  if (source === "files") return "File";
+  if (source === "git-staged") return "Git staged";
+  if (source === "git-unstaged") return "Git unstaged";
+  if (comparison === undefined) return "Git comparison";
+  const range = `${comparison.baseRef}${comparison.mode === "merge-base" ? "..." : ".."}${comparison.headRef}`;
+  return `Git ${range} (${comparison.base.slice(0, 12)}..${comparison.head.slice(0, 12)})`;
+}
 export function anchorLabel(anchor: Anchor): string {
-  return `${anchor.path}:${String(anchor.start)}${anchor.end === anchor.start ? "" : `-${String(anchor.end)}`} (${sourceLabel(anchor.source)}${anchor.side === "old" ? ", deleted" : ""})`;
+  return `${anchor.path}:${String(anchor.start)}${anchor.end === anchor.start ? "" : `-${String(anchor.end)}`} (${sourceLabel(anchor.source, anchor.comparison)}${anchor.side === "old" ? ", deleted" : ""})`;
 }
 
 /** Same coordinate/body review format as the original UI, now exported explicitly by the plugin. */
@@ -120,8 +131,10 @@ export function randomId(): string {
   return [...crypto.getRandomValues(new Uint32Array(4))].map((value) => value.toString(16).padStart(8, "0")).join("");
 }
 
-export function snapshot(path: string, source: ReviewSource, text: string): Snapshot {
-  const hash = [...sha256(new TextEncoder().encode(text))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+export function snapshot(path: string, source: ReviewSource, text: string, comparison?: GitComparison): Snapshot {
+  if (source === "git-compare" ? !isComparison(comparison) : comparison !== undefined) throw new Error("Invalid snapshot comparison");
+  const metadata = comparison === undefined ? {} : { comparison };
+  const hash = [...sha256(new TextEncoder().encode(comparison === undefined ? text : `${comparisonKey(comparison)}\n${text}`))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   if (lines.at(-1) === "") lines.pop();
   if (lines.length > 5_000) throw new Error("Source has too many lines to review inline (limit: 5,000)");
@@ -143,11 +156,11 @@ export function snapshot(path: string, source: ReviewSource, text: string): Snap
     }
     return { text, kind: "meta" };
   });
-  return { path, source, hash, rows };
+  return { path, source, ...metadata, hash, rows };
 }
 
 export function anchorInSnapshot(anchor: Anchor, view: Snapshot): boolean {
-  if (!validAnchor(anchor) || anchor.path !== view.path || anchor.source !== view.source) return false;
+  if (!validAnchor(anchor) || anchor.path !== view.path || anchor.source !== view.source || comparisonKey(anchor.comparison) !== comparisonKey(view.comparison)) return false;
   const lines = new Set(view.rows.filter((row) => row.side === anchor.side).map((row) => row.line));
   // Bound work for a manually edited range; a range cannot bridge omitted diff context.
   if (anchor.end - anchor.start >= lines.size) return false;

@@ -4,7 +4,7 @@ import { anchorInSnapshot, ReviewStore, reviewMarkdown, snapshot, storagePrefix,
 
 const comment = (id: string): Comment => ({ id, path: "src/a.ts", source: "files", side: "new", start: 1, end: 2, hash: "a".repeat(64), body: "**Check** this\n\n```ts\na();\n```", createdAt: 1 });
 
-describe("workspace review persistence (prepared; release verification pending)", () => {
+describe("workspace review persistence", () => {
   it("serializes concurrent tabs through separate connections without losing comments", async () => {
     const first = reviewStorage(); const second = reviewStorage(first.factory);
     await Promise.all([first.store.add("one", comment("a")), second.store.add("one", comment("b"))]);

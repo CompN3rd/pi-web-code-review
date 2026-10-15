@@ -1,11 +1,39 @@
-export type ReviewSource = "files" | "git-staged" | "git-unstaged";
+export type ReviewSource = "files" | "git-staged" | "git-unstaged" | "git-compare";
 export type GitSource = Exclude<ReviewSource, "files">;
+
+/** Frozen commit endpoints, retained with comments even when branch names move. */
+export interface GitComparison {
+  baseRef: string;
+  headRef: string;
+  mode: "merge-base" | "direct";
+  base: string;
+  head: string;
+}
+
+export function isRevision(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9_][a-z0-9_./~^@{}-]{0,255}$/iu.test(value) && !value.includes("..");
+}
+export function isCommitId(value: unknown): value is string {
+  return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value);
+}
+export function isComparison(value: unknown): value is GitComparison {
+  return record(value) && isRevision(value["baseRef"]) && isRevision(value["headRef"])
+    && (value["mode"] === "merge-base" || value["mode"] === "direct")
+    && isCommitId(value["base"]) && isCommitId(value["head"]);
+}
+export function parseComparison(value: unknown): GitComparison {
+  if (!isComparison(value)) throw new Error("Invalid Git comparison");
+  return value;
+}
+export function comparisonKey(comparison: GitComparison | undefined): string {
+  return comparison === undefined ? "" : JSON.stringify([comparison.baseRef, comparison.headRef, comparison.mode, comparison.base, comparison.head]);
+}
 
 export const MAX_TEXT_LENGTH = 200_000;
 export const MAX_FILES = 2_000;
 
 export function isGitSource(value: unknown): value is GitSource {
-  return value === "git-staged" || value === "git-unstaged";
+  return value === "git-staged" || value === "git-unstaged" || value === "git-compare";
 }
 
 /** Relative, unambiguous paths. Git callers must also disable pathspec magic with --literal-pathspecs. */

@@ -1,7 +1,7 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { renderReviewMarkdown } from "./markdown.js";
 import type { FileTreeEntry, WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
-import { isGitSource, isWorkspacePath, MAX_FILES, MAX_TEXT_LENGTH, parseDiff, parsePaths, type ReviewSource } from "../protocol.js";
+import { isGitSource, isWorkspacePath, MAX_FILES, MAX_TEXT_LENGTH, parseComparison, parseDiff, parsePaths, type GitComparison, type ReviewSource } from "../protocol.js";
 import { anchorInSnapshot, anchorLabel, randomId, ReviewStore, reviewMarkdown, snapshot, sourceLabel, workspaceKey, type Anchor, type Comment, type Row, type Snapshot } from "./model.js";
 import type { ReviewChips } from "./chips.js";
 
@@ -22,6 +22,11 @@ export class ReviewPanel extends LitElement {
   store: ReviewStore | undefined;
   lifetime: AbortSignal | undefined;
   private source: ReviewSource = "files";
+  private baseRef = "main";
+  private headRef = "HEAD";
+  private comparisonMode: GitComparison["mode"] = "merge-base";
+  private comparison: GitComparison | undefined;
+  private comparing: AbortController | undefined;
   private directory = "";
   private entries: FileTreeEntry[] = [];
   private view: Snapshot | undefined;
@@ -50,7 +55,7 @@ export class ReviewPanel extends LitElement {
   }
   override disconnectedCallback(): void {
     this.connection++; this.feedbackRead++;
-    this.listing?.abort(); this.reading?.abort();
+    this.listing?.abort(); this.reading?.abort(); this.comparing?.abort();
     super.disconnectedCallback();
   }
   protected override updated(changed: PropertyValues<this>): void {
@@ -99,12 +104,32 @@ export class ReviewPanel extends LitElement {
   private signal(controller: AbortController): AbortSignal {
     return this.lifetime === undefined ? controller.signal : AbortSignal.any([controller.signal, this.lifetime]);
   }
+  private async applyComparison(): Promise<void> {
+    this.comparing?.abort(); this.listing?.abort(); this.reading?.abort();
+    const controller = new AbortController(); this.comparing = controller;
+    const signal = this.signal(controller);
+    this.comparison = undefined; this.view = undefined; this.entries = [];
+    this.listLoading = false; this.viewLoading = false; this.error = ""; this.requestUpdate();
+    try {
+      const peer = this.context.peer;
+      if (peer?.request === undefined) throw new Error("Git review backend unavailable");
+      const comparison = parseComparison(await peer.request("compare", {
+        source: "git-compare", baseRef: this.baseRef.trim(), headRef: this.headRef.trim(), mode: this.comparisonMode,
+      }, { signal }));
+      if (signal.aborted) return;
+      this.comparison = comparison;
+      await this.loadList();
+    } catch (error) { if (!signal.aborted) this.fail(error); }
+    finally { if (this.comparing === controller) { this.comparing = undefined; this.requestUpdate(); } }
+  }
   private async refresh(): Promise<void> {
+    if (this.source === "git-compare") { await this.applyComparison(); return; }
     const path = this.view?.path;
     await Promise.all([this.loadList(), path === undefined ? Promise.resolve() : this.openFile(path)]);
   }
   private async loadList(): Promise<void> {
     this.listing?.abort();
+    if (this.source === "git-compare" && this.comparison === undefined) return;
     const controller = new AbortController(); this.listing = controller;
     const signal = this.signal(controller);
     this.listLoading = true; this.error = ""; this.requestUpdate();
@@ -118,7 +143,7 @@ export class ReviewPanel extends LitElement {
       } else {
         const peer = this.context.peer;
         if (peer?.request === undefined) throw new Error("Git review backend is unavailable. Enable the plugin on this machine and restart its session daemon");
-        const paths = parsePaths(await peer.request("changes", { source: this.source }, { signal }));
+        const paths = parsePaths(await peer.request("changes", { source: this.source, ...(this.comparison === undefined ? {} : { comparison: { ...this.comparison } }) }, { signal }));
         entries = paths.map((path) => ({ path, name: path, type: "file" }));
       }
       if (signal.aborted) return;
@@ -130,7 +155,7 @@ export class ReviewPanel extends LitElement {
     this.reading?.abort();
     const controller = new AbortController(); this.reading = controller;
     const signal = this.signal(controller);
-    const source = this.source;
+    const source = this.source; const comparison = this.comparison;
     this.viewLoading = true; this.error = ""; this.requestUpdate();
     try {
       if (!isWorkspacePath(path)) throw new Error("Enter a workspace-relative file path");
@@ -143,9 +168,9 @@ export class ReviewPanel extends LitElement {
       } else {
         const peer = this.context.peer;
         if (peer?.request === undefined) throw new Error("Git review backend unavailable");
-        text = parseDiff(await peer.request("diff", { source, path }, { signal }));
+        text = parseDiff(await peer.request("diff", { source, path, ...(comparison === undefined ? {} : { comparison: { ...comparison } }) }, { signal }));
       }
-      const next = snapshot(path, source, text);
+      const next = snapshot(path, source, text, comparison);
       if (signal.aborted) return;
       this.view = next;
       // Never attach an unfinished comment to refreshed or unrelated content.
@@ -157,9 +182,11 @@ export class ReviewPanel extends LitElement {
   }
   private selectSource(value: string): void {
     if (value !== "files" && !isGitSource(value)) return;
-    this.source = value; this.view = undefined; this.entries = [];
+    this.comparing?.abort(); this.comparing = undefined;
+    this.listing?.abort(); this.listLoading = false;
+    this.source = value; this.comparison = undefined; this.view = undefined; this.entries = [];
     this.reading?.abort(); this.reading = undefined; this.viewLoading = false;
-    void this.loadList();
+    if (value === "git-compare") void this.applyComparison(); else void this.loadList();
   }
   private selectLine(row: Row, extend: boolean): void {
     const view = this.view;
@@ -167,7 +194,7 @@ export class ReviewPanel extends LitElement {
     if (extend && this.editor !== undefined && this.editor.id === undefined && this.editor.path === view.path && this.editor.source === view.source && this.editor.side === row.side && this.editor.hash === view.hash) {
       this.editor = { ...this.editor, start: Math.min(this.editor.start, row.line), end: Math.max(this.editor.start, row.line) };
     } else if (this.editor === undefined) {
-      this.editor = { path: view.path, source: view.source, side: row.side, start: row.line, end: row.line, hash: view.hash, body: "" };
+      this.editor = { path: view.path, source: view.source, side: row.side, start: row.line, end: row.line, hash: view.hash, body: "", ...(view.comparison === undefined ? {} : { comparison: view.comparison }) };
     } else {
       this.notice = "Save or cancel the current comment first. Shift-click extends a range on the same side.";
     }
@@ -208,7 +235,12 @@ export class ReviewPanel extends LitElement {
     if (this.saving) return;
     if (this.editor !== undefined) { this.notice = "Save or cancel the current comment first."; this.requestUpdate(); return; }
     this.editor = { ...comment };
-    this.source = comment.source;
+    this.comparing?.abort(); this.comparing = undefined;
+    this.source = comment.source; this.comparison = comment.comparison;
+    this.view = undefined; this.entries = [];
+    if (comment.comparison !== undefined) {
+      this.baseRef = comment.comparison.baseRef; this.headRef = comment.comparison.headRef; this.comparisonMode = comment.comparison.mode;
+    }
     void this.loadList(); void this.openFile(comment.path);
   }
   private async attachReview(): Promise<void> {
@@ -252,7 +284,7 @@ export class ReviewPanel extends LitElement {
       <h2>Code Review</h2>
       <p>Save comments, then attach a review chip to the selected conversation. Failed sends retain feedback; server acceptance clears unchanged submitted comments.</p>
       <div class="toolbar"><label>Source <select .value=${this.source} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) this.selectSource(event.target.value); }}>
-        <option value="files">Files (including untracked)</option><option value="git-unstaged">Git unstaged</option><option value="git-staged">Git staged</option>
+        <option value="files">Files (including untracked)</option><option value="git-unstaged">Git unstaged</option><option value="git-staged">Git staged</option><option value="git-compare">Compare revisions</option>
       </select></label><button @click=${() => { void this.refresh(); }}>Refresh</button></div>
       ${this.source === "files" ? html`<form class="toolbar" @submit=${(event: SubmitEvent) => {
         event.preventDefault(); const form = event.currentTarget;
@@ -260,20 +292,28 @@ export class ReviewPanel extends LitElement {
           const path = new FormData(form).get("path"); if (typeof path === "string") void this.openFile(path);
         }
       }}><label>File path <input name="path" placeholder="src/example.ts"></label><button>Open file</button></form>` : null}
+      ${this.source !== "git-compare" ? null : html`<form class="toolbar" aria-label="Compare revisions" @submit=${(event: SubmitEvent) => { event.preventDefault(); void this.applyComparison(); }}>
+        <label>Base revision <input name="base" required maxlength="256" .value=${this.baseRef} placeholder="main" @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.baseRef = event.target.value; }}></label>
+        <label>Target revision <input name="head" required maxlength="256" .value=${this.headRef} placeholder="HEAD" @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.headRef = event.target.value; }}></label>
+        <label>Comparison <select name="mode" .value=${this.comparisonMode} @change=${(event: Event) => {
+          if (event.target instanceof HTMLSelectElement && (event.target.value === "merge-base" || event.target.value === "direct")) this.comparisonMode = event.target.value;
+        }}><option value="merge-base">Branch changes since merge base (A...B)</option><option value="direct">Between revisions (A..B)</option></select></label>
+        <button>Compare</button>
+      </form><p>Compare committed work only. Use main → HEAD with merge base for a branch review, or a commit → HEAD with between revisions for accumulated work. Branch names, tags, commit IDs, and HEAD~3 are supported. Compare or Refresh resolves revisions again; opening files uses the frozen commits shown below.</p>`}
       ${this.error === "" ? null : html`<p role="alert">${this.error}</p>`}
       ${Object.values(this.feedbackErrors).every((message) => message === "") ? null : html`
         ${Object.values(this.feedbackErrors).filter(Boolean).map((message) => html`<p role="alert">${message}</p>`)}
         <button @click=${() => { this.reportFeedbackError("", "acceptance"); this.reportFeedbackError("", "action"); this.reportFeedbackError("", "read"); }}>Dismiss feedback warning</button>`}
-      <p role="status" aria-live="polite">${this.listLoading || this.viewLoading ? "Loading…" : this.notice}</p>
-      <details class="file-list" open><summary>${this.source === "files" ? this.directory || "Workspace files" : `${sourceLabel(this.source)} files`}</summary>
+      <p role="status" aria-live="polite">${this.listLoading || this.viewLoading || this.comparing !== undefined ? "Loading…" : this.notice}</p>
+      <details class="file-list" open><summary>${this.source === "files" ? this.directory || "Workspace files" : `${sourceLabel(this.source, this.comparison)} files`}</summary>
         ${this.source === "files" && this.directory !== "" ? html`<button @click=${() => { this.directory = this.directory.split("/").slice(0, -1).join("/"); void this.loadList(); }}>Parent directory</button>` : null}
         ${this.entries.map((entry) => html`<button ?disabled=${this.listLoading} @click=${() => {
           if (entry.type === "directory") { this.directory = entry.path; void this.loadList(); }
           else void this.openFile(entry.path);
         }}>${entry.type === "directory" ? "📁 " : ""}${entry.name}</button>`)}
-        ${!this.listLoading && this.entries.length === 0 ? html`<p>No files in this view.</p>` : null}
+        ${!this.listLoading && this.comparing === undefined && this.entries.length === 0 ? html`<p>No files in this view.</p>` : null}
       </details>
-      ${view === undefined ? null : html`<h3>${view.path} — ${sourceLabel(view.source)}</h3><p>Click a line number, then Shift-click to extend its range, or edit the range below (works on touch screens).</p>
+      ${view === undefined ? null : html`<h3>${view.path} — ${sourceLabel(view.source, view.comparison)}</h3><p>Click a line number, then Shift-click to extend its range, or edit the range below (works on touch screens).</p>
         <div class="code" aria-label="Review source" aria-busy=${String(this.viewLoading)}>${view.rows.map((row) => {
           const anchor = row.line === undefined || row.side === undefined ? undefined : { path: view.path, source: view.source, side: row.side, start: row.line, end: row.line };
           const selected = anchor !== undefined && this.editor?.path === view.path && this.editor.source === view.source && this.editor.hash === view.hash

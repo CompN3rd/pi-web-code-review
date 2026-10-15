@@ -22,7 +22,10 @@ assert.equal(server.apiVersion, 3);
 let command;
 const serverActivation = await server.activate({ execFile: async (input) => {
   command = input;
-  return { exitCode: 0, signal: null, stdout: "a.ts\0", stderr: "", stdoutTruncated: false, stderrTruncated: false };
+  const stdout = input.args.includes("rev-parse")
+    ? (input.args.includes("main^{commit}") ? "a" : "b").repeat(40)
+    : input.args.includes("merge-base") ? "c".repeat(40) : "a.ts\0";
+  return { exitCode: 0, signal: null, stdout, stderr: "", stdoutTruncated: false, stderrTruncated: false };
 } });
 const workspace = { id: "w", projectId: "p", path: "/workspace", label: "main", isMain: true };
 const lifetime = new AbortController();
@@ -30,6 +33,12 @@ assert.deepEqual(await serverActivation.peer.request({ workspace, operation: "ch
 assert.equal(command.cwd, workspace.path);
 assert(command.args.includes("--cached"));
 assert(command.args.includes("--submodule=short"));
+const comparison = await serverActivation.peer.request({ workspace, operation: "compare", input: { source: "git-compare", baseRef: "main", headRef: "HEAD", mode: "merge-base" }, signal: lifetime.signal });
+assert.equal(comparison.base, "c".repeat(40));
+assert.equal(comparison.head, "b".repeat(40));
+assert.deepEqual(await serverActivation.peer.request({ workspace, operation: "changes", input: { source: "git-compare", comparison }, signal: lifetime.signal }), ["a.ts"]);
+assert(command.args.includes(comparison.base));
+assert(command.args.includes(comparison.head));
 
 const window = new Window();
 Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: new IDBFactory() });

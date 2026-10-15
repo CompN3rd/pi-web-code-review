@@ -1,5 +1,5 @@
 import type { PiWebServerPlugin, ServerPluginActivationContext, ServerPluginPeerRequestContext } from "@jmfederico/pi-web/server-plugin-api";
-import { isGitSource, isWorkspacePath, MAX_FILES, MAX_TEXT_LENGTH, record } from "./protocol.js";
+import { isCommitId, isGitSource, isRevision, isWorkspacePath, MAX_FILES, MAX_TEXT_LENGTH, parseComparison, record } from "./protocol.js";
 
 // Do not inherit the repository/index of the process hosting the daemon.
 const gitEnvironment = [
@@ -10,26 +10,46 @@ const gitEnvironment = [
 export async function requestGit(execFile: ServerPluginActivationContext["execFile"], request: ServerPluginPeerRequestContext) {
   const { input, operation, workspace, signal } = request;
   if (!record(input) || !isGitSource(input["source"])) throw new Error("Invalid Git review source");
-  if (operation !== "changes" && operation !== "diff") throw new Error("Unknown review operation");
+  if (operation !== "changes" && operation !== "diff" && operation !== "compare") throw new Error("Unknown review operation");
+  const run = async (args: string[]) => {
+    const result = await execFile({ file: "git", args: ["--literal-pathspecs", "-C", workspace.path, ...args], cwd: workspace.path, env: { GIT_OPTIONAL_LOCKS: "0" }, unsetEnv: gitEnvironment, signal, timeoutMs: 10_000 });
+    if (result.exitCode !== 0 || result.signal !== null) throw new Error(`Git review failed: ${result.stderr.trim() || `exit ${String(result.exitCode)}`}`);
+    if (result.stdoutTruncated || result.stderrTruncated) throw new Error("Git output exceeds the host limit; narrow the review");
+    return result.stdout;
+  };
+  if (operation === "compare") {
+    if (input["source"] !== "git-compare" || !isRevision(input["baseRef"]) || !isRevision(input["headRef"])
+      || (input["mode"] !== "merge-base" && input["mode"] !== "direct")) throw new Error("Invalid comparison revisions or mode");
+    const baseRef = input["baseRef"]; const headRef = input["headRef"]; const mode = input["mode"];
+    const resolve = async (ref: string) => {
+      const commit = (await run(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`])).trim();
+      if (!isCommitId(commit)) throw new Error("Git returned an invalid commit ID");
+      return commit;
+    };
+    const baseTip = await resolve(baseRef); const head = await resolve(headRef);
+    const base = mode === "direct" ? baseTip : (await run(["merge-base", baseTip, head])).trim();
+    if (!isCommitId(base)) throw new Error("Git returned an invalid merge base");
+    return { baseRef, headRef, mode, base, head };
+  }
+  const comparison = input["source"] === "git-compare" ? parseComparison(input["comparison"]) : undefined;
   const path = input["path"];
   if (operation === "diff" && !isWorkspacePath(path)) throw new Error("Invalid workspace-relative review path");
-  const args = ["--literal-pathspecs", "-C", workspace.path, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--submodule=short", "--relative"];
+  const args = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--submodule=short", "--relative"];
   if (input["source"] === "git-staged") args.push("--cached");
   if (operation === "changes") args.push("--name-only", "-z");
   else args.push("--unified=3");
+  if (comparison !== undefined) args.push(comparison.base, comparison.head);
   args.push("--");
   if (operation === "diff" && typeof path === "string") args.push(path);
-  const result = await execFile({ file: "git", args, cwd: workspace.path, env: { GIT_OPTIONAL_LOCKS: "0" }, unsetEnv: gitEnvironment, signal, timeoutMs: 10_000 });
-  if (result.exitCode !== 0 || result.signal !== null) throw new Error(`Git review failed: ${result.stderr.trim() || `exit ${String(result.exitCode)}`}`);
-  if (result.stdoutTruncated || result.stderrTruncated) throw new Error("Git output exceeds the host limit; narrow the review");
+  const output = await run(args);
   if (operation === "changes") {
-    const paths = result.stdout.split("\0").filter((entry) => entry !== "");
+    const paths = output.split("\0").filter((entry) => entry !== "");
     if (paths.length > MAX_FILES) throw new Error("Too many changed files; narrow the review");
     if (!paths.every(isWorkspacePath)) throw new Error("Git returned a filename this review plugin cannot safely address");
     return paths;
   }
-  if (result.stdout.length > MAX_TEXT_LENGTH) throw new Error("Diff is too large to review inline");
-  return result.stdout;
+  if (output.length > MAX_TEXT_LENGTH) throw new Error("Diff is too large to review inline");
+  return output;
 }
 
 const plugin: PiWebServerPlugin = {

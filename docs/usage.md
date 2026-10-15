@@ -4,7 +4,7 @@ Version **0.1.1** requires **PI WEB >=1.202610.3**. Automated tests, builds, and
 
 ## Install the standalone package
 
-Once published, install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine. Enable the plugin and restart safely as described below. To build and install locally:
+Once published, install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine. If migrating from the unscoped package, disable/remove that plugin first; do not enable both copies. The plugin ID and storage keys are unchanged. Enable the scoped plugin and restart safely as described below. To build and install locally:
 
 Build from this repository's root:
 
@@ -39,7 +39,7 @@ For remote workspaces, install and enable the package on each target machine. Gi
 ## Review files and changes
 
 1. Select a workspace and open the **Review** tab (or **Open Code Review** in the action palette).
-2. Choose **Files**, **Git unstaged**, or **Git staged**. Files includes untracked files. Browse directories or enter a workspace-relative file path.
+2. Choose **Files**, **Git unstaged**, **Git staged**, or **Compare revisions**. Files includes untracked files. Browse directories or enter a workspace-relative file path. For committed work across multiple commits, use the comparison controls below.
 3. Click a line number. Shift-click extends its range on the same side; on touch screens, edit **Start line** and **End line** instead. Deleted diff lines use old-side coordinates; context and additions use new-side coordinates. Ranges cannot span omitted diff context.
 4. Enter Markdown and choose **Save comment**. Ctrl/Cmd+Enter also saves; ordinary Enter inserts a newline.
 5. Review the saved list. **Edit comment** reloads its source before allowing a save; **Remove comment** deletes that comment.
@@ -48,9 +48,26 @@ Comments render safe Markdown: raw HTML is displayed as text, images do not load
 
 Saved comments are local to this browser origin, keyed by machine, project, and workspace. They survive reloads and session changes; they are not synchronized across browsers or machines. IndexedDB transactions serialize concurrent saves and acknowledgements across tabs, so independent comments are not lost through competing read/modify/write operations. IndexedDB does not require HTTPS or Web Locks; LAN HTTP remains supported where the browser permits origin storage. Storage errors are shown and an unsuccessful save leaves the editor text available. Corrupt or unrecognized storage is not overwritten automatically. Feedback warnings remain separate from source-loading errors, survive panel/workspace remounts within the activation, and stay visible until explicitly dismissed.
 
+### Review accumulated branch or commit changes
+
+Select **Compare revisions**, enter **Base revision** and **Target revision**, then choose a comparison mode and click **Compare**:
+
+| Goal | Base | Target | Mode |
+| --- | --- | --- | --- |
+| Current branch's work since diverging from main | `main` (or `origin/main`) | `HEAD` | Branch changes since merge base (`A...B`) |
+| Another branch's accumulated work | `main` | `feature/my-branch` | Branch changes since merge base (`A...B`) |
+| Last three commits together | `HEAD~3` | `HEAD` | Between revisions (`A..B`) |
+| Changes since a particular commit or tag | Commit ID or tag | `HEAD` | Between revisions (`A..B`) |
+
+Merge-base mode compares the common ancestor of base and target with the target, excluding changes made only on main after divergence. Between-revisions mode compares the two commit trees directly. A `main` branch is not assumed to exist: enter `master`, a remote-tracking branch, or another available revision as needed. Refs must exist locally; this feature does not fetch, checkout, stage, or modify Git data. Revisions are single branch/tag/commit expressions (including `HEAD~3` or `HEAD^`), not combined `A..B` strings, paths, or Git options.
+
+Only **committed** changes appear. Dirty index/worktree and untracked changes remain available in the other source modes. Click a changed file to review its complete accumulated diff, then comment as usual.
+
+The list and all opened files use the same resolved commit IDs, even if a branch moves meanwhile. **Compare** or **Refresh** resolves the inputs again and resets the file selection; choose a file in the new list. Saved comments retain the original endpoints, comparison mode, and snapshot hash. **Edit comment** reopens those frozen endpoints, not today's branch tips. A different comparison never silently re-anchors an existing comment, even if its text diff is identical. Feedback Markdown includes the revision labels and abbreviated commit IDs.
+
 ### Storage upgrade and recovery
 
-Reload **all old plugin tabs before using the upgraded plugin**. On first access to each workspace, the plugin imports its previous `pi-web-code-review:v1:` localStorage record into IndexedDB in one transaction. The record itself marks migration complete, including when its comment list is empty after removal or acknowledgement. Existing IndexedDB data always wins. Legacy localStorage is retained unchanged as a backup, not an active store after migration. Old plugin tabs still write only localStorage; their later edits cannot safely be merged automatically and will not appear in the upgraded plugin. Copy any such feedback before reloading those tabs.
+Reload **all old plugin tabs before using the upgraded plugin**. Comparison comments introduce a new source type; older plugin versions cannot read a workspace record containing them and report unrecognized storage without overwriting it. Upgrade all tabs before saving comparison comments; copy/export feedback before downgrading. On first access to each workspace, the plugin imports its previous `pi-web-code-review:v1:` localStorage record into IndexedDB in one transaction. The record itself marks migration complete, including when its comment list is empty after removal or acknowledgement. Existing IndexedDB data always wins. Legacy localStorage is retained unchanged as a backup, not an active store after migration. Old plugin tabs still write only localStorage; their later edits cannot safely be merged automatically and will not appear in the upgraded plugin. Copy any such feedback before reloading those tabs.
 
 If migration is corrupt, blocked, or fails, the panel reports it and retains the original data for recovery; it does not substitute an empty successful save. Close older tabs if an upgrade is blocked, then reopen Review to retry. Browser storage clearing deletes active comments and may also delete the backup; clearing only IndexedDB can reimport the retained legacy snapshot. Export/copy needed feedback before clearing storage.
 
@@ -58,7 +75,7 @@ Cross-tab chip withdrawal and live badges use BroadcastChannel notifications aft
 
 Switching away from the tab preserves the current editor within this activation. Switching workspace, reloading the browser, or disabling the plugin discards **unsaved** edits. Save before doing so.
 
-Refreshing or host file invalidation reloads the current snapshot. A changed file does not silently delete feedback: saved comments remain in the list, are flagged as stale when that source is viewed, and are not attached to its new lines. Copy any unfinished text before cancelling a stale edit. Create a new comment against the current snapshot instead of automatically moving an old anchor. Sources you have not reopened have not been checked for staleness; verify coordinates before handing off.
+Refreshing or host file invalidation reloads the current snapshot (in comparison mode, it re-resolves the revision inputs and resets the file selection). A changed file does not silently delete feedback: saved comments remain in the list, are flagged as stale when that source is viewed, and are not attached to its new lines. Copy any unfinished text before cancelling a stale edit. Create a new comment against the current snapshot instead of automatically moving an old anchor. Sources you have not reopened have not been checked for staleness; verify coordinates before handing off.
 
 ## Attach feedback to the composer
 

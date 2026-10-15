@@ -9,6 +9,7 @@ import { ReviewStore, storagePrefix, workspaceKey, type Comment } from "../src/b
 import { context, savedComment } from "./context.js";
 import { IDBFactory } from "fake-indexeddb";
 import { deferred } from "./storageSupport.js";
+import { record, type GitComparison } from "../src/protocol.js";
 
 const cleanups: (() => void)[] = [];
 class TestChannel {
@@ -59,6 +60,13 @@ async function open(panel: ReviewPanel) {
   button(panel, "a.ts").click();
   await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[aria-label="Current line 1"]')).not.toBeNull(); });
 }
+function chooseSource(panel: ReviewPanel, value: string): void {
+  const select = required(panel.shadowRoot?.querySelector("select"));
+  select.value = value; select.dispatchEvent(new Event("change"));
+}
+function submitComparison(panel: ReviewPanel): void {
+  required(panel.shadowRoot?.querySelector('form[aria-label="Compare revisions"]')).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+}
 async function editBody(panel: ReviewPanel, body: string) {
   const textarea = required(panel.shadowRoot?.querySelector<HTMLTextAreaElement>('.editor textarea'));
   textarea.value = body; textarea.dispatchEvent(new Event("input")); await panel.updateComplete;
@@ -75,6 +83,79 @@ describe("standalone Review panel", () => {
     expect(icon.getAttribute("aria-hidden")).toBe("true");
     expect(icon.querySelector("circle")).not.toBeNull();
     expect(icon.querySelector("path")).not.toBeNull();
+  });
+  it("reviews a frozen comparison, changes ranges, and restores saved comment endpoints for editing", async () => {
+    const original: GitComparison = { baseRef: "main", headRef: "HEAD", mode: "merge-base", base: "a".repeat(40), head: "b".repeat(40) };
+    let resolved = original;
+    const peer = vi.fn().mockImplementation((operation: string) => Promise.resolve(operation === "compare" ? { ...resolved }
+      : operation === "changes" ? ["compared.ts"] : "@@ -1 +1 @@\n-old\n+new\n"));
+    const ctx = context(); ctx.peer = { request: peer };
+    const { panel } = await mount(ctx);
+    chooseSource(panel, "git-compare");
+    await vi.waitFor(() => { expect(button(panel, "compared.ts")).toBeDefined(); });
+    expect(peer).toHaveBeenCalledWith("compare", { source: "git-compare", baseRef: "main", headRef: "HEAD", mode: "merge-base" }, expect.anything());
+    button(panel, "compared.ts").click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[aria-label="Current line 1"]')).not.toBeNull(); });
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    await editBody(panel, "Across several commits"); button(panel, "Save comment").click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector("article")).not.toBeNull(); });
+    expect((await required(panel.store).load(workspaceKey(ctx)))[0]?.comparison).toEqual(original);
+    const base = required(panel.shadowRoot?.querySelector<HTMLInputElement>('input[name="base"]'));
+    base.value = "HEAD~3"; base.dispatchEvent(new Event("input"));
+    const mode = required(panel.shadowRoot?.querySelector<HTMLSelectElement>('select[name="mode"]'));
+    mode.value = "direct"; mode.dispatchEvent(new Event("change"));
+    resolved = { ...original, baseRef: "HEAD~3", mode: "direct", base: "c".repeat(40) };
+    submitComparison(panel); await panel.updateComplete;
+    await vi.waitFor(() => {
+      expect(button(panel, "compared.ts").disabled).toBe(false);
+      expect(panel.shadowRoot?.querySelector("summary")?.textContent).toContain("HEAD~3");
+    });
+    expect(peer).toHaveBeenCalledWith("compare", { source: "git-compare", baseRef: "HEAD~3", headRef: "HEAD", mode: "direct" }, expect.anything());
+    button(panel, "compared.ts").click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector(".stale")).not.toBeNull(); });
+    expect(panel.shadowRoot?.querySelector(".inline-comment")).toBeNull();
+    button(panel, "Edit comment").click();
+    await vi.waitFor(() => { expect(button(panel, "Save comment").disabled).toBe(false); });
+    expect(peer).toHaveBeenLastCalledWith("diff", { source: "git-compare", path: "compared.ts", comparison: original }, expect.anything());
+    expect(required(panel.shadowRoot?.querySelector<HTMLInputElement>('input[name="base"]')).value).toBe("main");
+    expect(panel.shadowRoot?.querySelector(".inline-comment")?.textContent).toContain("Across several commits");
+  });
+  it.each(["source switch", "new comparison", "disposal"])("ignores an obsolete revision resolution after %s", async (cause) => {
+    const pending = deferred<GitComparison>();
+    const resolved: GitComparison = { baseRef: "main", headRef: "HEAD", mode: "merge-base", base: "a".repeat(40), head: "b".repeat(40) };
+    const peer = vi.fn().mockImplementation((operation: string) => operation === "compare" ? pending.promise : Promise.resolve(["obsolete.ts"]));
+    const ctx = context(); ctx.peer = { request: peer };
+    const { panel, host } = await mount(ctx);
+    chooseSource(panel, "git-compare"); await panel.updateComplete;
+    if (cause === "source switch") chooseSource(panel, "files");
+    if (cause === "disposal") host.remove();
+    if (cause === "new comparison") {
+      peer.mockImplementation((operation: string) => Promise.resolve(operation === "compare" ? { ...resolved, head: "c".repeat(40) } : ["current.ts"]));
+      submitComparison(panel);
+    }
+    pending.resolve(resolved); await pending.promise; await panel.updateComplete;
+    await vi.waitFor(() => { expect(panel.shadowRoot?.textContent).not.toContain("obsolete.ts"); });
+    if (cause === "new comparison") await vi.waitFor(() => { expect(button(panel, "current.ts")).toBeDefined(); });
+  });
+  it("ignores an old diff after changing comparisons and displays resolution errors", async () => {
+    const pending = deferred<string>();
+    const comparison: GitComparison = { baseRef: "main", headRef: "HEAD", mode: "merge-base", base: "a".repeat(40), head: "b".repeat(40) };
+    const peer = vi.fn().mockImplementation((operation: string, input: unknown) => {
+      if (operation === "compare") return Promise.resolve({ ...comparison });
+      if (operation === "changes") return Promise.resolve(["compared.ts"]);
+      if (!record(input) || input["source"] !== "git-compare") throw new Error("Missing comparison");
+      return pending.promise;
+    });
+    const ctx = context(); ctx.peer = { request: peer };
+    const { panel } = await mount(ctx); chooseSource(panel, "git-compare");
+    await vi.waitFor(() => { expect(button(panel, "compared.ts")).toBeDefined(); });
+    button(panel, "compared.ts").click();
+    peer.mockRejectedValueOnce(new Error("Unknown revision missing-branch"));
+    submitComparison(panel);
+    pending.resolve("@@ -1 +1 @@\n-before\n+obsolete diff\n"); await pending.promise;
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("Unknown revision"); });
+    expect(panel.shadowRoot?.querySelector('[aria-label="Review source"]')).toBeNull();
+    expect(panel.shadowRoot?.textContent).not.toContain("obsolete diff");
   });
   it("selects a range, saves Markdown, edits coordinates, remounts and removes feedback", async () => {
     const { panel, ctx, host, contribution } = await mount(); await open(panel);
