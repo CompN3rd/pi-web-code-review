@@ -8,6 +8,10 @@ import { IDBFactory } from "fake-indexeddb";
 // Consume existing artifacts, optionally from an extracted tarball. Never rebuild here.
 const root = resolve(process.argv[2] ?? ".");
 const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+assert.equal(manifest.name, "@compn3rd/pi-web-code-review");
+assert.equal(manifest.version, "0.1.1");
+assert.equal(manifest.publishConfig.access, "public");
+assert.notEqual(manifest.private, true);
 const entry = manifest.piWeb.plugins[0];
 assert.equal(entry.id, "code-review");
 assert.equal(entry.machineSpecific, true);

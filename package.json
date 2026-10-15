@@ -1,6 +1,9 @@
 {
-  "name": "pi-web-code-review",
-  "version": "0.1.0",
+  "name": "@compn3rd/pi-web-code-review",
+  "version": "0.1.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Workspace file and Git review comments for PI WEB, without host modifications.",
   "repository": {
     "type": "git",
@@ -11,6 +14,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "docs",
     "LICENSE"
   ],
