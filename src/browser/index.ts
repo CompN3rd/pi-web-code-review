@@ -74,6 +74,7 @@ const plugin: PiWebPlugin = {
         }],
         workspacePanels: [{
           id: "review", title: "Review", order: 35,
+          icon: html`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="7.5"></circle><path d="m16 16 5 5"></path></svg>`,
           invalidationResources: ["workspace.files"],
           badge: (context) => {
             const key = workspaceKey(context);

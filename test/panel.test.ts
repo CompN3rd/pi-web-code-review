@@ -65,6 +65,17 @@ async function editBody(panel: ReviewPanel, body: string) {
 }
 
 describe("standalone Review panel", () => {
+  it("provides a theme-aware magnifying glass icon for the Review tab", async () => {
+    const { contribution } = await mount();
+    const host = document.createElement("div");
+    render(contribution.icon, host);
+    const icon = required(host.querySelector("svg"));
+    expect(contribution.title).toBe("Review");
+    expect(icon.getAttribute("stroke")).toBe("currentColor");
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+    expect(icon.querySelector("circle")).not.toBeNull();
+    expect(icon.querySelector("path")).not.toBeNull();
+  });
   it("selects a range, saves Markdown, edits coordinates, remounts and removes feedback", async () => {
     const { panel, ctx, host, contribution } = await mount(); await open(panel);
     required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
