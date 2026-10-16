@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.2 — 2026-10-16
+
+### Changed
+
+- Open and focus comment editors directly beneath the selected code line, inside the file viewer, instead of below the entire file.
+- Use a full-width header with saved-comment and unsaved-draft status, and move **Attach review to composer** to the header.
+- Place file navigation beside the viewer on wide panels and stack it above the viewer on narrow panels.
+- Highlight the active file and improve empty states, keyboard hints, focus indicators, and source-control layout.
+- Keep changed-snapshot drafts accessible outside the code view without losing their text or allowing an invalid save.
+
+### Validation and compatibility
+
+- Add regression tests for inline editor placement, focus, header action placement, active-file state, and changed-snapshot draft preservation (84 tests total).
+- Capture browser-rendered before/after screenshots with the same sample file and draft; these are standalone previews, not live-host acceptance tests.
+- No host API, storage format, or server behavior changes. Requirements remain PI WEB `>=1.202610.3` and Node.js `>=22.19.0`.
+- Live-host acceptance and remote-machine testing remain outstanding; see [compatibility results](docs/compatibility.md).
+
 ## 0.1.1 — 2026-10-15
 
 Package: **`@compn3rd/pi-web-code-review`** (public npm scope).

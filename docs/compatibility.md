@@ -24,6 +24,10 @@ No production API migration was required for this release:
 
 The supported dependency range is `>=1.202610.3`; the lockfile records a concrete resolved version. Compatibility was checked against `1.202610.3`, not every later version. One test access was made null-safe because panel `state` is optional in the public contract. No production API migration was needed. The subsequent `0.1.1` patch adds the Review icon, lint cleanup, and branch/commit comparisons described in the [changelog](../CHANGELOG.md). Revision comparison uses only the existing scoped package-peer API and read-only Git runner; no additional host API is required.
 
+## UI patch 0.1.2
+
+The redesigned panel uses the same host APIs, storage format, and server operations as 0.1.1. Standalone Edge screenshots show the old and new components with identical sample content ([before](screenshots/review-before.png), [after](screenshots/review-after.png)). Browser rendering was checked separately from the DOM tests; this does not establish live-host behavior or narrow-panel acceptance.
+
 ## Validation
 
 After `npm ci --ignore-scripts`:
@@ -32,7 +36,7 @@ After `npm ci --ignore-scripts`:
 | --- | --- |
 | `npm run typecheck` | Passed |
 | `npm run lint` | Passed |
-| `npm test` | Passed: 6 files, 82 tests |
+| `npm test` | Passed: 6 files, 84 tests |
 | `npm run build` | Passed |
 | `npm run check:artifacts` | Passed |
 | `npm pack` and smoke check of extracted package | Passed |
@@ -50,6 +54,6 @@ All 38 original lint findings are resolved. Async disposal and callback-mutated 
 1. Automated verification and packed smoke checks pass after lint cleanup; storage/ownership guards remain in place.
 2. Validate comparison controls and saved comparison comments on a live host, including moving branches and upgrading all older tabs. Complete the separate live-host checklist in [the release gate](composer-design.md#release-gate), especially successful/failed/chips-only sends, steer/follow-up, replacement during Send, selection changes, two-tab acknowledgements, and remote scoping. The newest host also adds pending-message controls; confirm locally queued messages do not clear saved feedback before server admission.
 3. The declared host range is `>=1.202610.3`. Only `1.202610.3` was checked here; later versions are allowed but have not been independently verified.
-4. Publication is enabled for the `0.1.1` patch release as `@compn3rd/pi-web-code-review`. The remaining validation is follow-up work; discovered defects will be addressed in patch releases.
+4. Publication is enabled for the `0.1.2` patch release as `@compn3rd/pi-web-code-review`. The remaining validation is follow-up work; discovered defects will be addressed in patch releases.
 
 Automated verification did not install the plugin into a live PI WEB instance or restart a daemon. Live-host testing remains separate from package publication.

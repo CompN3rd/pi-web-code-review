@@ -1,6 +1,6 @@
 # Code Review workflow
 
-Version **0.1.1** requires **PI WEB >=1.202610.3**. Automated tests, builds, and artifact smoke checks passed against `1.202610.3`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
+Version **0.1.2** requires **PI WEB >=1.202610.3**. Automated tests, builds, and artifact smoke checks passed against `1.202610.3`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
 
 ## Install the standalone package
 
@@ -40,7 +40,7 @@ For remote workspaces, install and enable the package on each target machine. Gi
 
 1. Select a workspace and open the **Review** tab (or **Open Code Review** in the action palette).
 2. Choose **Files**, **Git unstaged**, **Git staged**, or **Compare revisions**. Files includes untracked files. Browse directories or enter a workspace-relative file path. For committed work across multiple commits, use the comparison controls below.
-3. Click a line number. Shift-click extends its range on the same side; on touch screens, edit **Start line** and **End line** instead. Deleted diff lines use old-side coordinates; context and additions use new-side coordinates. Ranges cannot span omitted diff context.
+3. Click a line number to open and focus the comment editor directly below it inside the viewer. Shift-click extends its range on the same side; on touch screens, edit **Start line** and **End line** instead. Deleted diff lines use old-side coordinates; context and additions use new-side coordinates. Ranges cannot span omitted diff context.
 4. Enter Markdown and choose **Save comment**. Ctrl/Cmd+Enter also saves; ordinary Enter inserts a newline.
 5. Review the saved list. **Edit comment** reloads its source before allowing a save; **Remove comment** deletes that comment.
 
@@ -79,7 +79,7 @@ Refreshing or host file invalidation reloads the current snapshot (in comparison
 
 ## Attach feedback to the composer
 
-Choose a ready, unarchived conversation in this workspace, then select **Attach review to composer**. One removable **Review (N)** chip contains a snapshot of all saved comments. Repeating the action replaces that conversation's review chip, not the text at its cursor. You can inspect the payload under **Feedback Markdown**.
+Choose a ready, unarchived conversation in this workspace, then select **Attach review to composer** in the panel header. The header shows saved-comment and unsaved-draft counts; save your draft first if you want it included. One removable **Review (N)** chip contains a snapshot of all saved comments. Repeating the action replaces that conversation's review chip, not the text at its cursor. You can inspect the payload under **Feedback Markdown**.
 
 Send the chip with a message or by itself. Failed sends keep it and the saved comments for retry. Server acceptance clears only unchanged comments from the submitted snapshot; later edits and new comments survive. Acceptance does not mean the assistant has finished answering. Removing the composer chip only detaches it—saved comments remain available.
 

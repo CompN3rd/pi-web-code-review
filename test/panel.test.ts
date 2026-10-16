@@ -73,6 +73,30 @@ async function editBody(panel: ReviewPanel, body: string) {
 }
 
 describe("standalone Review panel", () => {
+  it("opens and focuses the draft directly beneath the selected code line", async () => {
+    const { panel } = await mount(); await open(panel);
+    const line = required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]'));
+    line.click(); await panel.updateComplete;
+    const editor = required(panel.shadowRoot?.querySelector('.code .editor'));
+    expect(line.closest('.row')?.nextElementSibling).toBe(editor);
+    expect(panel.shadowRoot?.activeElement).toBe(editor.querySelector('textarea'));
+    expect(panel.shadowRoot?.querySelectorAll('.editor')).toHaveLength(1);
+    expect(button(panel, "Attach review to composer").closest('header')).not.toBeNull();
+    expect(button(panel, "a.ts").getAttribute('aria-current')).toBe('page');
+    await editBody(panel, "Inline draft");
+    button(panel, "Cancel edit").click(); await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector('.editor')).toBeNull();
+  });
+  it("keeps a changed-snapshot draft accessible outside the code without losing text", async () => {
+    const { panel, ctx } = await mount(); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click();
+    await panel.updateComplete; await editBody(panel, "Keep this draft");
+    ctx.files.readFile = vi.fn().mockResolvedValue({ content: "changed\n", binary: false, truncated: false });
+    button(panel, "Refresh").click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('.code .editor')).toBeNull(); });
+    expect(panel.shadowRoot?.querySelector<HTMLTextAreaElement>('.viewer .editor textarea')?.value).toBe('Keep this draft');
+    expect(button(panel, "Save comment").disabled).toBe(true);
+  });
   it("provides a theme-aware magnifying glass icon for the Review tab", async () => {
     const { contribution } = await mount();
     const host = document.createElement("div");
