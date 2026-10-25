@@ -1,10 +1,15 @@
 import { vi } from "vitest";
-import type { WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
+import type { WorkspacePanelContextV5 } from "@jmfederico/pi-web/plugin-api";
 import type { Comment } from "../src/browser/model.js";
 
 export const savedComment: Comment = { id: "c1", path: "a.ts", source: "files", side: "new", start: 1, end: 1, body: "Please fix this", hash: "a".repeat(64), createdAt: 1 };
-export function context(): WorkspacePanelContext {
+export function context(): WorkspacePanelContextV5 {
   return {
+    catalog: { version: 1, machineId: "local",
+      projects: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+      workspaces: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+      sessions: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+    },
     machine: { id: "local", name: "Local", kind: "local" },
     workspace: { id: "w", projectId: "p", path: "/repo", label: "main", isMain: true },
     state: {

@@ -4,28 +4,39 @@ A standalone Review tab for workspace files, staged/unstaged Git changes, and ac
 
 ## Requirements and installation
 
-Patch release: **0.1.2**. Requires **PI WEB >=1.202610.3**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Compatibility checks were performed against PI WEB `1.202610.3`; later releases are allowed but have not been independently tested.
+Version **0.2.0** requires **PI WEB >=1.202610.6**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Tested against PI WEB `1.202610.6`; later releases have not been independently verified.
 
 Install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine, then enable **Code Review** in **Settings → PI WEB plugins**. For local builds and manual installation, see the [usage guide](docs/usage.md).
 
 This package includes a server plugin: restart the target session daemon when safe, then reload the browser. Restarting interrupts active sessions and terminals; do it from outside the sessions that daemon hosts. Install the package on each remote machine where you want to review files.
 
+## Two review layouts
+
+Open **Review settings** in the panel header to choose:
+
+- **Workbench** — persistent file navigation, code viewer, and saved-feedback rail on wide panels. On phones, files and notes open in sheets.
+- **Focus** — a wide code view with inline feedback, a file switcher, and a collapsible saved-review summary.
+
+The layout and **Wrap code** preference are saved for this browser, across workspaces. Switching layouts preserves the current file, line range, and unsaved draft. Unsaved drafts are not persisted across browser reloads or workspace changes.
+
+![Workbench layout](docs/screenshots/0.2.0/workbench-desktop.png)
+
+[Focus layout](docs/screenshots/0.2.0/focus-desktop.png) · [Phone Workbench](docs/screenshots/0.2.0/workbench-phone.png) · [Phone Focus](docs/screenshots/0.2.0/focus-phone.png) · [Phone settings](docs/screenshots/0.2.0/phone-settings.png)
+
+Screenshots render the production bundle with sample backend data, not a live PI WEB host. Phone captures use Chromium at phone viewport sizes, not real devices.
+
 ## Review workflow
 
-Open the **Review** tab, choose workspace files, staged/unstaged changes, or **Compare revisions**, and save line-range comments. Compare `main...HEAD` for branch work since its merge base, or `HEAD~3..HEAD` for accumulated work between commits. Comparison comments retain frozen commit IDs. Select a ready conversation and choose **Attach review to composer** to stage a removable **Review (N)** chip. Send it with a message or by itself. Removing the chip preserves saved comments; server acceptance clears only unchanged submitted comments.
+Choose **Files**, **Unstaged**, **Staged**, or **Compare**. Compare `main...HEAD` for branch work since its merge base, or `HEAD~3..HEAD` for accumulated work between commits. Comparison comments retain frozen commit IDs.
 
-## Redesigned review panel
+Click or tap a line number to open an inline comment editor. Shift-click extends the range; on phones, expand **Line range** to edit the coordinates. Save your comments, select a ready conversation, and choose **Attach review to composer**. This stages a removable **Review (N)** chip; it does not send a message or include unsaved drafts. Removing the chip preserves saved comments. Server acceptance clears only unchanged submitted comments.
 
-Click a line number to open a focused comment editor directly beneath that line. The file sidebar sits beside the viewer on wide panels and stacks above it on narrow panels. Saved-comment and draft counts appear in the full-width header alongside **Attach review to composer**; only saved comments are attached.
+## Validation
 
-![Redesigned review panel](docs/screenshots/review-after.png)
+Typechecking, lint, **99 tests**, builds, and unpacked/packed artifact smoke checks pass. Production-bundle Chromium checks cover dark/light palettes, phone widths **360/390/430px**, wrapping, settings, draft preservation, sheets, keyboard modality, range editing and mocked composer attachment. `npm audit` reports no known vulnerabilities in the resolved dependency tree.
 
-Standalone browser preview with sample content, not a live-host screenshot. [Before redesign](docs/screenshots/review-before.png).
+Live-host shared styling, real phone keyboards, remote-machine behavior and end-to-end send acceptance remain follow-up validation; they are not claimed as completed.
 
-## Validation status
-
-Typechecking, all 84 tests, builds, and unpacked/packed artifact smoke checks passed against PI WEB `1.202610.3`. Full automated verification passes; live-host acceptance testing is pending. Publication is enabled for the scoped patch release; these remaining checks are follow-up work, not claims of completed validation.
-
-See the [composer design](docs/composer-design.md), [usage guide](docs/usage.md), [development guide](docs/development.md), and [compatibility results](docs/compatibility.md).
+See the [usage guide](docs/usage.md), [development guide](docs/development.md), [compatibility results](docs/compatibility.md), and [composer design](docs/composer-design.md).
 
 Adapted from the Code Review UI branch and PI WEB's MIT-licensed plugin examples; see [LICENSE](LICENSE).

@@ -1,14 +1,23 @@
-import type { PiWebPlugin } from "@jmfederico/pi-web/plugin-api";
+import type { PiWebPluginV5, StylesheetIntegrationCapabilityV1 } from "@jmfederico/pi-web/plugin-api";
+import { stylesheetIntegration } from "./styling.js";
 import { ReviewPanel, type FeedbackErrorKind } from "./panel.js";
 import { ReviewChips } from "./chips.js";
 import { randomId, ReviewStore, workspaceKey } from "./model.js";
 import { IndexedDBReviewStorage } from "./storage.js";
 
-const plugin: PiWebPlugin = {
-  apiVersion: 4,
+const plugin: PiWebPluginV5 = {
+  apiVersion: 5,
+  requires: [stylesheetIntegration],
   name: "Code Review",
   activate({ html, runtimePluginId, lifetimeSignal }) {
-    class Panel extends ReviewPanel {}
+    let styles: StylesheetIntegrationCapabilityV1 | undefined;
+    class Panel extends ReviewPanel {
+      constructor() {
+        super();
+        if (styles === undefined) throw new Error("Code Review styling has not started");
+        styles.createController(this, { sharedUi: true });
+      }
+    }
     customElements.define(`pi-web-code-review-${randomId()}`, Panel);
     let panel: Panel | undefined;
     let owner: string | undefined;
@@ -66,6 +75,7 @@ const plugin: PiWebPlugin = {
     const closeChannel = () => { channel?.close(); channel = undefined; };
     lifetimeSignal.addEventListener("abort", closeChannel, { once: true });
     return {
+      start({ capabilities }) { styles = capabilities.resolve(stylesheetIntegration); },
       contributions: {
         actions: [{
           id: "open", title: "Open Code Review", group: "Workspace",

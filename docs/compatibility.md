@@ -1,59 +1,43 @@
-# Latest-release compatibility check
+# Release compatibility and validation
 
-## Target
+## 0.2.0 target
 
-Checked npm's latest published `@jmfederico/pi-web`: **1.202610.3**, source revision `29f0ace6d955a458a947bb0f03673fa069afb8da`.
+Checked published **`@jmfederico/pi-web@1.202610.6`**, including its packaged `docs/plugins.md` and public browser/server declarations. The supported host minimum is now **1.202610.6**. The lockfile records the concrete development dependency. Compatibility with future releases is not implied by these checks.
 
-References:
+## Integration
 
-- [Release changelog](https://github.com/jmfederico/pi-web/blob/29f0ace6d955a458a947bb0f03673fa069afb8da/CHANGELOG.md)
-- [Version-matched plugin guide](https://github.com/jmfederico/pi-web/blob/29f0ace6d955a458a947bb0f03673fa069afb8da/docs/plugins.md)
-- Public browser/server declarations in the installed npm package, resolved through `@jmfederico/pi-web/plugin-api` and `@jmfederico/pi-web/server-plugin-api`.
+- Browser entrypoint migrated from API **v4 to v5**.
+- Declares the public **`pi-web/stylesheet-integration` v1** capability, resolves it in `start`, and installs one Lit controller per panel with `{ sharedUi: true }`. The host owns stylesheet adoption and cleanup on disconnect/reconnect. Missing or malformed capability values fail explicitly.
+- Uses shared `ui-button`, `ui-select`, `ui-toolbar` and `ui-file-row` patterns with component-owned responsive CSS and inherited `--pi-*` colour/font tokens. No private host imports, global CSS patches or stylesheet-text capability are used. Styling remains experimental upstream and must be rechecked on upgrades.
+- Server entry remains API **v3**, which `1.202610.6` still supports (with an upstream deprecation diagnostic). Its workspace-scoped, read-only Git operations are unchanged. There is no need to accept new machine/project scopes for this UI release.
+- Composer-chip ownership, acceptance callbacks, storage transactions, comparison endpoints, plugin ID and comment schema are unchanged. There is no comment-data migration for 0.2.0.
+- Layout/wrapping preferences use a separate browser-local key, `pi-web-code-review:preferences:v1`. Corrupt or unavailable preferences fall back safely. Write failures report that the choice applies to the current panel only; they do not block comment storage.
+- UI controls are implemented by this plugin. Shared styles do not supply event handling, selection or ARIA semantics. Native modal dialogs supply modal background exclusion and Escape handling.
 
-## Integration findings
-
-No production API migration was required for this release:
-
-- Composer chips shipped in **1.202610.2**. `PluginPromptChip`, optional `setChip`/`removeChip`, silent programmatic withdrawal, and `onRemove("user" | "submitted")` match the plugin's implementation. Submission means server acceptance, not agent completion; failed sends retain chips.
-- Browser API **v4** and server API **v3** are unchanged. Workspace file helpers, invalidation, package peers, and bounded `execFile` with `unsetEnv` and operation signals remain supported.
-- Removed panel aliases do not affect this plugin: it declares no `routeAliases`/`navigationAliases` and opens its panel with the runtime-qualified contribution ID.
-- Full, case-sensitive session IDs are now required. The plugin already uses the full `selectedSession.id`; it does not generate abbreviated session links.
-- New selection subscriptions, application panels, metadata, and message actions are optional additions, not required adaptations for the existing Review panel.
-- PI WEB's newer Pi SDK dependencies do not require a companion-extension migration here: this plugin uses no Pi SDK imports or companion extension.
-- The standalone browser/server manifest follows the published example, keeping server code outside `browserRoot`. Node's declared minimum remains `>=22.19.0`.
-
-The supported dependency range is `>=1.202610.3`; the lockfile records a concrete resolved version. Compatibility was checked against `1.202610.3`, not every later version. One test access was made null-safe because panel `state` is optional in the public contract. No production API migration was needed. The subsequent `0.1.1` patch adds the Review icon, lint cleanup, and branch/commit comparisons described in the [changelog](../CHANGELOG.md). Revision comparison uses only the existing scoped package-peer API and read-only Git runner; no additional host API is required.
-
-## UI patch 0.1.2
-
-The redesigned panel uses the same host APIs, storage format, and server operations as 0.1.1. Standalone Edge screenshots show the old and new components with identical sample content ([before](screenshots/review-before.png), [after](screenshots/review-after.png)). Browser rendering was checked separately from the DOM tests; this does not establish live-host behavior or narrow-panel acceptance.
-
-## Validation
-
-After `npm ci --ignore-scripts`:
+## Automated results
 
 | Check | Result |
 | --- | --- |
-| `npm run typecheck` | Passed |
-| `npm run lint` | Passed |
-| `npm test` | Passed: 6 files, 84 tests |
-| `npm run build` | Passed |
-| `npm run check:artifacts` | Passed |
-| `npm pack` and smoke check of extracted package | Passed |
-| `npm run verify` | Passed |
-| Live-host send/acceptance, remote machines, real browser storage failures | Not exercised |
+| Typecheck and typed ESLint | Passed |
+| Unit/DOM/real-Git tests | Passed: 7 files, 99 tests |
+| Browser/server build | Passed |
+| Unpacked artifact smoke | Passed |
+| Actual `npm pack` and extracted-package smoke | Passed |
+| Production-bundle Chromium acceptance | Passed |
+| Dependency audit | 0 known vulnerabilities |
 
-The artifact harness activates the built browser/server entries with mocked host contexts and a DOM/IndexedDB harness. Passing it does not establish live host registration or end-to-end send behavior.
+Browser checks exercise dark/light palettes at desktop width; 360/390/430px viewports with both layouts and wrapping on/off; absence of page-level horizontal overflow; draft retention through layout changes; preference persistence (DOM tests); file/notes/settings dialogs; keyboard exclusion of inert background controls; numeric range editing; mocked chip attachment without clearing the draft; stale-draft save prevention after source changes; and stylesheet-controller connection/disconnection. The browser harness consumes the built `dist/browser/index.js` artifact, not the visual prototype.
 
-### Lint cleanup
+The artifact harness uses mocked host contexts and DOM/IndexedDB adapters. The Chromium harness uses native browser storage and the production plugin with a sample backend and a mock stylesheet capability; it does not reproduce the running host's shared CSS bundle. Screenshots under `docs/screenshots/0.2.0/` document those limits.
 
-All 38 original lint findings are resolved. Async disposal and callback-mutated ownership checks are preserved through live-state reads. Storage rejects with Error instances (retaining non-Error exceptions as causes), and tests use runtime-checked panel fixtures, real event/request objects, and explicit mock spies. The deliberately unbound IndexedDB method has a local lint exemption because its receiver is explicitly supplied with `.call`.
+## Follow-up acceptance
 
-## Remaining release work
+- Live-host registration and shared stylesheet/theme adoption, including theme changes and narrow desktop panels.
+- Real iOS/Android keyboards, viewport changes, touch selection and assistive technology.
+- Successful/failed/chips-only sends, steer/follow-up, in-flight replacement, two-tab acknowledgements, real storage failures and remote-machine scoping. The automated ownership/storage regressions pass, but do not establish live end-to-end acceptance.
 
-1. Automated verification and packed smoke checks pass after lint cleanup; storage/ownership guards remain in place.
-2. Validate comparison controls and saved comparison comments on a live host, including moving branches and upgrading all older tabs. Complete the separate live-host checklist in [the release gate](composer-design.md#release-gate), especially successful/failed/chips-only sends, steer/follow-up, replacement during Send, selection changes, two-tab acknowledgements, and remote scoping. The newest host also adds pending-message controls; confirm locally queued messages do not clear saved feedback before server admission.
-3. The declared host range is `>=1.202610.3`. Only `1.202610.3` was checked here; later versions are allowed but have not been independently verified.
-4. Publication is enabled for the `0.1.2` patch release as `@compn3rd/pi-web-code-review`. The remaining validation is follow-up work; discovered defects will be addressed in patch releases.
+See the [composer checklist](composer-design.md#release-gate). These live checks remain follow-up work under the existing publication policy. No live plugin installation, daemon restart or host modification was performed to produce this release.
 
-Automated verification did not install the plugin into a live PI WEB instance or restart a daemon. Live-host testing remains separate from package publication.
+## Earlier releases
+
+Versions 0.1.1 and 0.1.2 were checked against PI WEB `1.202610.3`, browser API v4 and server API v3. The 0.1.2 inline-editor redesign passed 84 tests. Historical [before](screenshots/review-before.png) and [after](screenshots/review-after.png) captures are standalone previews, not live-host screenshots.

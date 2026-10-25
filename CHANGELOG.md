@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- Switchable **Workbench** and **Focus** layouts in the panel’s **Review settings**, with browser-local layout and code-wrap preferences.
+- Workbench file navigation and saved-feedback rail; Focus inline feedback, file switcher and collapsible review summary. Layout changes preserve the active file, range and draft.
+- Phone file/notes sheets, touch-sized controls, wrapped code, numeric range disclosure, and responsive source/comparison controls.
+- Production-bundle Chromium checks and dark/light desktop/phone screenshots. Regression coverage increases from 84 to 99 tests.
+
+### Changed
+
+- Require PI WEB **>=1.202610.6** and migrate the browser entry to API **v5**.
+- Opt into public `stylesheet-integration` v1 with host shared UI primitives and theme-aware, component-scoped CSS. Server API v3 and read-only Git operations are unchanged.
+- Compact source selection and move path/help/range details behind disclosures. Keep saved comments and unsaved drafts distinct; attaching still does not send.
+- Update Vite/Vitest development dependencies to patched versions; dependency audit is clean.
+- Exclude design-study source and prototype assets from the published package; ship production screenshots and user documentation.
+
+### Validation and limits
+
+- Typecheck, lint, 99 tests, builds, unpacked/packed artifact smoke checks, and production-bundle browser checks pass.
+- Chromium checks cover both layouts at 360/390/430px, dark/light palettes, wrapping, dialogs, draft preservation, range editing and mocked attachment.
+- Live-host shared styling, real phone keyboards and end-to-end send/remote acceptance remain follow-up checks. No daemon restart or installation is part of release preparation.
+- Comment schema, IndexedDB data and composer acceptance semantics are unchanged; no comment migration is required.
+
 ## 0.1.2 — 2026-10-16
 
 ### Changed

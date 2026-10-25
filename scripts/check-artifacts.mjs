@@ -49,8 +49,10 @@ for (const key of ["window", "document", "customElements", "HTMLElement", "Docum
 try {
   const { html, svg, render } = await import("lit");
   const browser = (await import(pathToFileURL(resolve(root, entry.module)).href)).default;
-  assert.equal(browser.apiVersion, 4);
+  assert.equal(browser.apiVersion, 5);
   const activation = await browser.activate({ html, svg, runtimePluginId: "smoke", pluginId: "smoke", signal: new AbortController().signal, lifetimeSignal: lifetime.signal });
+  let sharedUi = false;
+  await activation.start({ signal: lifetime.signal, capabilities: { resolve: capability => capability.parse({ createController: (_host, options) => { sharedUi = options.sharedUi; }, registerRoot() {}, subscribe() {} }) } });
   const contribution = activation.contributions.workspacePanels[0];
   const context = {
     machine: { id: "local", name: "Local", kind: "local" }, workspace,
@@ -61,6 +63,7 @@ try {
   render(contribution.render(context), host);
   await host.firstElementChild.store.load(JSON.stringify([context.machine.id, workspace.projectId, workspace.id]));
   await host.firstElementChild.updateComplete;
+  assert.equal(sharedUi, true);
   await window.happyDOM.waitUntilComplete();
   assert.equal(host.firstElementChild.shadowRoot.querySelector('[role="alert"]'), null);
   assert(host.firstElementChild.shadowRoot.textContent.includes("Saved comments (0)"));

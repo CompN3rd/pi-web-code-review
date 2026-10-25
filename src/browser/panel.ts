@@ -1,4 +1,6 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { LitElement, html, type PropertyValues } from "lit";
+import { reviewStyles } from "./styles.js";
+import { readPreferences, writePreferences, type ReviewLayout, type ReviewPreferences } from "./preferences.js";
 import { renderReviewMarkdown } from "./markdown.js";
 import type { FileTreeEntry, WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
 import { isGitSource, isWorkspacePath, MAX_FILES, MAX_TEXT_LENGTH, parseComparison, parseDiff, parsePaths, type GitComparison, type ReviewSource } from "../protocol.js";
@@ -21,6 +23,10 @@ export class ReviewPanel extends LitElement {
   chips: ReviewChips | undefined;
   store: ReviewStore | undefined;
   lifetime: AbortSignal | undefined;
+  private preferences = readPreferences();
+  private settingsLayout: ReviewLayout = this.preferences.layout;
+  private dialogKind: "settings" | "files" | "notes" | undefined;
+  private preferenceError = "";
   private source: ReviewSource = "files";
   private baseRef = "main";
   private headRef = "HEAD";
@@ -56,6 +62,7 @@ export class ReviewPanel extends LitElement {
   }
   override disconnectedCallback(): void {
     this.connection++; this.feedbackRead++;
+    this.closeDialog();
     this.listing?.abort(); this.reading?.abort(); this.comparing?.abort();
     super.disconnectedCallback();
   }
@@ -274,63 +281,128 @@ export class ReviewPanel extends LitElement {
     this.editor = { ...this.editor, [field]: field === "body" ? event.target.value : Number(event.target.value) };
     this.requestUpdate();
   }
+  private openDialog(kind: "settings" | "files" | "notes"): void {
+    this.dialogKind = kind;
+    this.settingsLayout = this.preferences.layout;
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      if (!this.isConnected || this.dialogKind !== kind) return;
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog");
+      if (dialog !== null && !dialog.open) dialog.showModal();
+    });
+  }
+  private closeDialog(): void {
+    this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.close();
+    this.dialogKind = undefined;
+    this.requestUpdate();
+  }
+  private setPreferences(value: ReviewPreferences): void {
+    this.preferences = value;
+    try { writePreferences(value); this.preferenceError = ""; }
+    catch { this.preferenceError = "Review settings could not be saved in this browser. Your choice applies for this panel only."; }
+    this.requestUpdate();
+  }
+  private stepFile(direction: number): void {
+    const files = this.entries.filter((entry) => entry.type === "file");
+    const index = files.findIndex((entry) => entry.path === this.view?.path);
+    const entry = files[index + direction];
+    if (entry !== undefined) void this.openFile(entry.path);
+  }
   private renderEditor() {
     const editor = this.editor;
     if (editor === undefined) return null;
     const valid = !this.viewLoading && editor.hash === this.view?.hash && anchorInSnapshot(editor, this.view);
     return html`<section class="editor" aria-label="Comment editor">
-      <strong>${anchorLabel(editor)}</strong>
-      <div class="toolbar"><label>Start line <input ?disabled=${this.saving} type="number" min="1" step="1" .value=${String(editor.start)} @input=${(event: Event) => { this.changeEditor("start", event); }}></label>
-      <label>End line <input ?disabled=${this.saving} type="number" min="1" step="1" .value=${String(editor.end)} @input=${(event: Event) => { this.changeEditor("end", event); }}></label></div>
+      <strong>${anchorLabel(editor)} · ${editor.id === undefined ? "Unsaved draft" : "Unsaved edit"}</strong>
       ${valid ? null : html`<p role="alert">Choose a valid range in the current snapshot on one side. Omitted diff lines cannot be selected. Changed snapshots cannot be re-anchored automatically.</p>`}
       <label>Comment (Markdown)<textarea ?disabled=${this.saving} rows="4" .value=${editor.body} @input=${(event: Event) => { this.changeEditor("body", event); }} @keydown=${(event: KeyboardEvent) => {
         if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void this.saveEditor(); }
       }}></textarea></label>
-      <div class="toolbar"><button class="primary" ?disabled=${this.saving || !valid || editor.body.trim() === ""} @click=${() => { void this.saveEditor(); }}>Save comment</button>
-      <button ?disabled=${this.saving} @click=${() => { this.editor = undefined; this.notice = ""; this.requestUpdate(); }}>Cancel edit</button><span class="hint">Ctrl / ⌘ + Enter to save</span></div>
+      <details class="range"><summary>Line range · ${editor.start}–${editor.end}</summary>
+        <div class="toolbar"><label>Start line <input ?disabled=${this.saving} type="number" min="1" step="1" .value=${String(editor.start)} @input=${(event: Event) => { this.changeEditor("start", event); }}></label>
+        <label>End line <input ?disabled=${this.saving} type="number" min="1" step="1" .value=${String(editor.end)} @input=${(event: Event) => { this.changeEditor("end", event); }}></label></div>
+      </details>
+      <div class="toolbar"><button class="ui-button primary" ?disabled=${this.saving || !valid || editor.body.trim() === ""} @click=${() => { void this.saveEditor(); }}>Save comment</button>
+      <button class="ui-button" ?disabled=${this.saving} @click=${() => { this.editor = undefined; this.notice = ""; this.requestUpdate(); }}>Cancel edit</button><span class="hint">Ctrl / ⌘ + Enter to save</span></div>
     </section>`;
+  }
+  private renderFiles() {
+    return html`<details class="file-list ui-file-list" open><summary>${this.source === "files" ? this.directory || "Workspace files" : `${sourceLabel(this.source, this.comparison)} files`}</summary>
+      ${this.source === "files" && this.directory !== "" ? html`<button class="ui-button" @click=${() => { this.directory = this.directory.split("/").slice(0, -1).join("/"); void this.loadList(); }}>Parent directory</button>` : null}
+      ${this.entries.map((entry) => html`<button class="ui-button ui-file-row" title=${entry.path} aria-current=${entry.path === this.view?.path ? "page" : "false"} ?disabled=${this.listLoading} @click=${() => {
+        if (entry.type === "directory") { this.directory = entry.path; void this.loadList(); }
+        else { this.closeDialog(); void this.openFile(entry.path); }
+      }}><span class="file-label ui-file-label">${entry.type === "directory" ? "📁 " : ""}${entry.name}</span></button>`)}
+      ${!this.listLoading && this.comparing === undefined && this.entries.length === 0 ? html`<p class="hint">No files in this view.</p>` : null}
+    </details>`;
+  }
+  private renderSaved() {
+    return html`<p class="hint">Saved locally · not sent. Only saved comments attach. Send from the conversation.</p>
+      ${this.editor === undefined ? null : html`<p class="hint draft-count">1 unsaved draft · ${anchorLabel(this.editor)}</p>`}
+      ${this.comments.length === 0 ? html`<p class="hint">No comments yet. Select a line number to add one.</p>` : null}
+      ${this.comments.map((comment) => html`<article><strong>${anchorLabel(comment)}</strong>
+        ${comment.path === this.view?.path && comment.source === this.view.source && comment.hash !== this.view.hash ? html`<p class="stale">Source changed since this comment was saved. Verify its coordinates before sending.</p>` : null}
+        <div class="markdown">${renderReviewMarkdown(html, comment.body)}</div>
+        <div class="toolbar"><button class="ui-button" ?disabled=${this.saving} @click=${() => { this.closeDialog(); this.editComment(comment); }}>Edit comment</button><button class="ui-button" ?disabled=${this.saving} @click=${() => { void this.removeComment(comment); }}>Remove comment</button></div>
+      </article>`)}
+      <details class="markdown-export"><summary>Feedback Markdown</summary><textarea aria-label="Feedback Markdown" readonly rows="8" .value=${reviewMarkdown(this.comments)}></textarea></details>`;
+  }
+  private renderDialog() {
+    return html`<dialog class=${this.dialogKind === "settings" ? "settings" : "sheet"} aria-labelledby="review-dialog-title" @close=${() => { this.dialogKind = undefined; this.requestUpdate(); }}>
+      <div class="dialog-heading"><h2 id="review-dialog-title">${this.dialogKind === "settings" ? "Review settings" : this.dialogKind === "files" ? "Review files" : "Review notes"}</h2><button class="ui-button" aria-label="Close dialog" @click=${() => { this.closeDialog(); }}>✕</button></div>
+      ${this.dialogKind === "settings" ? html`<form @submit=${(event: SubmitEvent) => { event.preventDefault(); this.setPreferences({ ...this.preferences, layout: this.settingsLayout }); this.closeDialog(); }}>
+        <p class="hint">Layout · saved for this browser</p>
+        <label class="layout-option"><input type="radio" name="layout" value="workbench" .checked=${this.settingsLayout === "workbench"} @change=${() => { this.settingsLayout = "workbench"; this.requestUpdate(); }}><span><strong>Workbench</strong><span class="hint">Files, code and notes side by side. On phones, files and notes open as sheets.</span></span></label>
+        <label class="layout-option"><input type="radio" name="layout" value="focus" .checked=${this.settingsLayout === "focus"} @change=${() => { this.settingsLayout = "focus"; this.requestUpdate(); }}><span><strong>Focus</strong><span class="hint">A wide code view with inline feedback. On phones, review one file at a time.</span></span></label>
+        <p class="hint">Switch layouts without losing your current file, line range or draft. This preference applies across workspaces on this browser.</p>
+        <button class="ui-button primary settings-save">Apply layout</button>
+      </form>` : this.dialogKind === "files" ? this.renderFiles() : this.dialogKind === "notes" ? this.renderSaved() : null}
+    </dialog>`;
   }
   override render() {
     const view = this.view;
     const inlineEditor = this.editor !== undefined && this.editor.hash === view?.hash && anchorInSnapshot(this.editor, view);
-    return html`<section class="review-panel" aria-label="Code Review">
-      <header class="review-header"><div><h2>Code Review</h2><p class="hint">Review files. Comment in context. Share when ready.</p></div>
-        <div class="review-actions"><span>${this.comments.length} saved · ${this.editor === undefined ? "No draft" : "1 unsaved draft"}</span>
-        <button class="primary" ?disabled=${this.saving || this.comments.length === 0} @click=${() => { void this.attachReview(); }}>Attach review to composer</button>
-        <span class="hint">Saved comments only · send from the conversation</span></div>
-      </header>
-      <div class="source-controls"><div class="toolbar"><label>Source <select .value=${this.source} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) this.selectSource(event.target.value); }}>
-        <option value="files">Files (including untracked)</option><option value="git-unstaged">Git unstaged</option><option value="git-staged">Git staged</option><option value="git-compare">Compare revisions</option>
-      </select></label><button @click=${() => { void this.refresh(); }}>Refresh</button></div>
-      ${this.source === "files" ? html`<form class="toolbar" @submit=${(event: SubmitEvent) => {
+    const files = this.entries.filter((entry) => entry.type === "file");
+    const fileIndex = files.findIndex((entry) => entry.path === view?.path);
+    return html`<section class=${`review-panel ${this.preferences.layout}${this.preferences.wrapCode ? " wrap" : ""}`} aria-label="Code Review">
+      <header class="review-header"><h2>Code review</h2><div class="review-actions">
+        <span>${this.comments.length} saved <span class="draft-count">· ${this.editor === undefined ? "No draft" : "1 unsaved draft"}</span></span>
+        <button class="ui-button primary attach" title="Attach saved comments as a chip; send from the conversation" ?disabled=${this.saving || this.comments.length === 0} @click=${() => { void this.attachReview(); }}>Attach review to composer</button>
+        <button class="ui-button settings-button" @click=${() => { this.openDialog("settings"); }}>Review settings</button>
+      </div></header>
+      <div class="source-bar ui-toolbar"><div class="source-tabs ui-toolbar-group" role="group" aria-label="Review source selection">
+        ${([ ["files", "Files"], ["git-unstaged", "Unstaged"], ["git-staged", "Staged"], ["git-compare", "Compare"] ] as const).map(([value, label]) => html`<button class="ui-button" data-source=${value} aria-pressed=${String(this.source === value)} @click=${() => { if (this.source !== value) this.selectSource(value); }}>${label}</button>`)}
+      </div><button class="ui-button" @click=${() => { void this.refresh(); }}>Refresh</button></div>
+      <div class="source-controls">
+      ${this.source === "files" ? html`<details><summary>Open a file by path</summary><form class="toolbar" @submit=${(event: SubmitEvent) => {
         event.preventDefault(); const form = event.currentTarget;
         if (form instanceof HTMLFormElement) {
           const path = new FormData(form).get("path"); if (typeof path === "string") void this.openFile(path);
         }
-      }}><label>File path <input name="path" placeholder="src/example.ts"></label><button>Open file</button></form>` : null}
+      }}><label>File path <input name="path" placeholder="src/example.ts"></label><button class="ui-button">Open file</button></form></details>` : null}
       ${this.source !== "git-compare" ? null : html`<form class="toolbar" aria-label="Compare revisions" @submit=${(event: SubmitEvent) => { event.preventDefault(); void this.applyComparison(); }}>
         <label>Base revision <input name="base" required maxlength="256" .value=${this.baseRef} placeholder="main" @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.baseRef = event.target.value; }}></label>
         <label>Target revision <input name="head" required maxlength="256" .value=${this.headRef} placeholder="HEAD" @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.headRef = event.target.value; }}></label>
-        <label>Comparison <select name="mode" .value=${this.comparisonMode} @change=${(event: Event) => {
+        <label>Comparison <select class="ui-select" name="mode" .value=${this.comparisonMode} @change=${(event: Event) => {
           if (event.target instanceof HTMLSelectElement && (event.target.value === "merge-base" || event.target.value === "direct")) this.comparisonMode = event.target.value;
-        }}><option value="merge-base">Branch changes since merge base (A...B)</option><option value="direct">Between revisions (A..B)</option></select></label>
-        <button>Compare</button>
-      </form><p>Compare committed work only. Use main → HEAD with merge base for a branch review, or a commit → HEAD with between revisions for accumulated work. Branch names, tags, commit IDs, and HEAD~3 are supported. Compare or Refresh resolves revisions again; opening files uses the frozen commits shown below.</p>`}
+        }}><option value="merge-base">Since merge base (A...B)</option><option value="direct">Between revisions (A..B)</option></select></label>
+        <button class="ui-button">Compare</button>
+      </form><details class="source-help"><summary>About revision comparisons</summary><p class="hint">Committed work only. Use main → HEAD with merge base for a branch review, or HEAD~3 → HEAD with between revisions for accumulated work. Compare or Refresh resolves revisions again; files use the frozen commits shown in their heading.</p></details>`}
       </div>
-      ${this.error === "" ? null : html`<p role="alert">${this.error}</p>`}
+      ${this.error === "" ? null : html`<p class="notice" role="alert">${this.error}</p>`}
+      ${this.preferenceError === "" ? null : html`<p class="notice" role="alert">${this.preferenceError}</p>`}
       ${Object.values(this.feedbackErrors).every((message) => message === "") ? null : html`
-        ${Object.values(this.feedbackErrors).filter(Boolean).map((message) => html`<p role="alert">${message}</p>`)}
-        <button @click=${() => { this.reportFeedbackError("", "acceptance"); this.reportFeedbackError("", "action"); this.reportFeedbackError("", "read"); }}>Dismiss feedback warning</button>`}
-      <p role="status" aria-live="polite">${this.listLoading || this.viewLoading || this.comparing !== undefined ? "Loading…" : this.notice}</p>
-      <div class="review-workspace"><nav aria-label="Review files"><details class="file-list" open><summary>${this.source === "files" ? this.directory || "Workspace files" : `${sourceLabel(this.source, this.comparison)} files`}</summary>
-        ${this.source === "files" && this.directory !== "" ? html`<button @click=${() => { this.directory = this.directory.split("/").slice(0, -1).join("/"); void this.loadList(); }}>Parent directory</button>` : null}
-        ${this.entries.map((entry) => html`<button aria-current=${entry.path === view?.path ? "page" : "false"} ?disabled=${this.listLoading} @click=${() => {
-          if (entry.type === "directory") { this.directory = entry.path; void this.loadList(); }
-          else void this.openFile(entry.path);
-        }}>${entry.type === "directory" ? "📁 " : ""}${entry.name}</button>`)}
-        ${!this.listLoading && this.comparing === undefined && this.entries.length === 0 ? html`<p>No files in this view.</p>` : null}
-      </details></nav><main class="viewer">
-      ${view === undefined ? html`<div class="empty-state"><h3>${this.viewLoading ? "Opening file…" : "Choose a file to start reviewing"}</h3><p>Select a file from the list or open a workspace-relative path above.</p></div>` : html`<div class="file-heading"><h3>${view.path}</h3><span class="hint">${sourceLabel(view.source, view.comparison)}</span><p class="hint">Click a line number to comment. Shift-click to extend the range, or use the editor’s line fields.</p></div>
+        ${Object.values(this.feedbackErrors).filter(Boolean).map((message) => html`<p class="notice" role="alert">${message}</p>`)}
+        <button class="ui-button" @click=${() => { this.reportFeedbackError("", "acceptance"); this.reportFeedbackError("", "action"); this.reportFeedbackError("", "read"); }}>Dismiss feedback warning</button>`}
+      <p class="notice" role="status" aria-live="polite">${this.listLoading || this.viewLoading || this.comparing !== undefined ? "Loading…" : this.notice}</p>
+      <div class="review-workspace"><nav class="file-nav" aria-label="Review files">${this.renderFiles()}</nav><main class="viewer">
+      <div class="view-tools"><button class="ui-button file-switch" @click=${() => { this.openDialog("files"); }} title=${view?.path ?? "Review files"}>${this.preferences.layout === "focus" ? view?.path.split("/").pop() ?? "Choose file" : `Files (${String(this.entries.length)})`} ▾</button>
+        <button class="ui-button mobile-notes" @click=${() => { this.openDialog("notes"); }}>Notes (${this.comments.length})</button>
+        <button class="ui-button file-step" aria-label="Previous file" ?disabled=${this.listLoading || fileIndex <= 0} @click=${() => { this.stepFile(-1); }}>←</button>
+        <button class="ui-button file-step" aria-label="Next file" ?disabled=${this.listLoading || fileIndex >= files.length - 1} @click=${() => { this.stepFile(1); }}>→</button>
+        <label class="wrap-control"><input type="checkbox" .checked=${this.preferences.wrapCode} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.setPreferences({ ...this.preferences, wrapCode: event.target.checked }); }}>Wrap code</label>
+      </div>
+      ${view === undefined ? html`<div class="empty-state"><h3>${this.viewLoading ? "Opening file…" : "Choose a file to start reviewing"}</h3><p>Select a file from the list or open a workspace-relative path above.</p></div>` : html`<div class="file-heading"><h3>${view.path}</h3><span class="hint">${sourceLabel(view.source, view.comparison)}</span></div>
         <div class="code" aria-label="Review source" aria-busy=${String(this.viewLoading)}>${view.rows.map((row) => {
           const anchor = row.line === undefined || row.side === undefined ? undefined : { path: view.path, source: view.source, side: row.side, start: row.line, end: row.line };
           const selected = anchor !== undefined && this.editor?.path === view.path && this.editor.source === view.source && this.editor.hash === view.hash
@@ -338,64 +410,15 @@ export class ReviewPanel extends LitElement {
           const comments = anchor === undefined ? [] : this.comments.filter((comment) => comment.path === view.path && comment.source === view.source && comment.hash === view.hash && comment.side === row.side && comment.start === row.line);
           return html`<div class=${`row ${row.kind}${selected ? " selected" : ""}`}>
             ${anchor === undefined ? html`<span class="line"></span>` : html`<button class="line" aria-label=${`${row.side === "old" ? "Deleted" : "Current"} line ${String(row.line)}`} aria-pressed=${String(selected)} ?disabled=${this.viewLoading} @click=${(event: MouseEvent) => { this.selectLine(row, event.shiftKey); }}>${row.line}</button>`}
-            <code>${row.text || " "}</code></div>${inlineEditor && this.editor?.side === row.side && this.editor?.start === row.line ? this.renderEditor() : null}${comments.map((comment) => html`<div class="inline-comment">${renderReviewMarkdown(html, comment.body)}</div>`)}`;
-        })}</div>${view.rows.length === 0 ? html`<p>No text lines to review.</p>` : null}`}
+            <span class="sign" aria-hidden="true">${row.kind === "add" ? "+" : row.kind === "remove" ? "−" : ""}</span><code>${(isGitSource(view.source) && row.kind !== "meta" ? row.text.slice(1) : row.text) || " "}</code>
+            ${comments.length === 0 ? null : html`<button class="comment-marker" aria-label=${`View ${String(comments.length)} saved comments at line ${String(row.line)}`} @click=${() => { this.openDialog("notes"); }}>${comments.length}</button>`}
+          </div>${inlineEditor && this.editor?.side === row.side && this.editor?.start === row.line ? this.renderEditor() : null}${comments.map((comment) => html`<div class="inline-comment">${renderReviewMarkdown(html, comment.body)}<div class="toolbar"><button class="ui-button" ?disabled=${this.saving} @click=${() => { this.editComment(comment); }}>Edit comment</button></div></div>`)}`;
+        })}</div>${view.rows.length === 0 ? html`<p class="notice">No text lines to review.</p>` : null}`}
       ${inlineEditor ? null : this.renderEditor()}
-      </main></div>
-      <section class="saved-review" aria-label="Saved review"><h3>Saved comments (${this.comments.length})</h3>
-      <p class="hint">Saved locally until sent. Failed sends retain feedback; acceptance clears unchanged submitted comments.</p>
-      ${this.comments.length === 0 ? html`<p class="hint">No comments yet. Click a line number in the file viewer to add one.</p>` : null}
-      ${this.comments.map((comment) => html`<article><strong>${anchorLabel(comment)}</strong>
-        ${comment.path === view?.path && comment.source === view.source && comment.hash !== view.hash ? html`<p class="stale">Source changed since this comment was saved. Verify its coordinates before sending.</p>` : null}
-        <div class="markdown">${renderReviewMarkdown(html, comment.body)}</div>
-        <div class="toolbar"><button ?disabled=${this.saving} @click=${() => { this.editComment(comment); }}>Edit comment</button><button ?disabled=${this.saving} @click=${() => { void this.removeComment(comment); }}>Remove comment</button></div>
-      </article>`)}
-      <details><summary>Feedback Markdown</summary><textarea aria-label="Feedback Markdown" readonly rows="8" .value=${reviewMarkdown(this.comments)}></textarea></details>
-    </section></section>`;
+      <div class="hintbar"><span class="desktop-hint">Click a line number to comment · Shift-click to extend a range</span><span class="phone-hint">Tap a line number to comment · Adjust range in the editor</span></div>
+      </main><aside class="saved-review" aria-label="Saved review"><details ?open=${this.preferences.layout === "workbench"}><summary>Saved comments (${this.comments.length})</summary>${this.renderSaved()}</details></aside></div>
+      ${this.renderDialog()}
+    </section>`;
   }
-  static override styles = css`
-    :host { display: block; color: var(--pi-text, #ddd); font: 14px system-ui, sans-serif; }
-    * { box-sizing: border-box; }
-    :host { container-type: inline-size; width: 100%; min-width: 0; }
-    .review-panel { padding: 16px; } h2, h3 { margin: 0; } p { line-height: 1.5; }
-    .hint { color: var(--pi-muted, #aaa); font-size: 12px; }
-    .review-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--pi-border, #666); padding-bottom: 16px; }
-    .review-header p { margin: 6px 0 0; }
-    .review-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-    .source-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 20px; padding: 8px 0; }
-    .source-controls form { flex: 1; } .source-controls label { flex: 1; min-width: 140px; }
-    .source-controls > p { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--pi-muted, #aaa); }
-    .review-workspace { display: grid; grid-template-columns: minmax(160px, 22%) minmax(0, 1fr); border: 1px solid var(--pi-border, #666); border-radius: 8px; overflow: hidden; }
-    nav { background: var(--pi-surface, #222); border-right: 1px solid var(--pi-border, #666); min-width: 0; padding: 12px; }
-    .viewer { min-width: 0; }
-    .file-heading { padding: 12px 16px; overflow-wrap: anywhere; } .file-heading p { margin-bottom: 0; }
-    .empty-state { padding: 48px 24px; text-align: center; color: var(--pi-muted, #aaa); }
-    .saved-review { margin-top: 24px; } summary { cursor: pointer; overflow-wrap: anywhere; }
-    [role=status]:empty { display: none; }
-    @container (max-width: 640px) {
-      .review-panel { padding: 10px; } .review-workspace { grid-template-columns: minmax(0, 1fr); }
-      nav { border-right: 0; border-bottom: 1px solid var(--pi-border, #666); }
-      .review-actions { align-items: flex-start; } .file-list { max-height: 150px !important; }
-    }
-    .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 8px 0; }
-    label { display: flex; flex-direction: column; gap: 4px; }
-    button, select, input, textarea { color: inherit; background: var(--pi-surface, #222); border: 1px solid var(--pi-border, #666); border-radius: 4px; padding: 6px; font: inherit; }
-    button { cursor: pointer; } button:hover:not(:disabled) { border-color: var(--pi-accent, #6cf); }
-    .primary { background: var(--pi-accent, #6cf); color: var(--pi-surface, #222); border-color: transparent; font-weight: 600; }
-    :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--pi-accent, #6cf); outline-offset: 2px; }
-    button:disabled { opacity: .5; cursor: default; } button:focus-visible { outline: 2px solid var(--pi-accent, #6cf); }
-    textarea { box-sizing: border-box; width: 100%; resize: vertical; } input[type=number] { width: 6em; }
-    .file-list { max-height: 65vh; overflow: auto; } .file-list button { display: block; width: 100%; text-align: left; margin: 4px 0; overflow-wrap: anywhere; border-color: transparent; background: transparent; }
-    .file-list button[aria-current=page] { background: var(--pi-selection-bg, #336699); border-color: var(--pi-accent, #6cf); }
-    .code { max-height: 65vh; overflow: auto; border-top: 1px solid var(--pi-border, #666); }
-    .code .editor, .code .inline-comment { position: sticky; left: 0; width: calc(100% - 24px); margin: 10px 12px; background: var(--pi-surface, #222); }
-    .editor { border-left: 3px solid var(--pi-accent, #6cf) !important; }
-    .editor strong { display: block; margin-bottom: 8px; }
-    .row { display: flex; min-width: max-content; } .row code { white-space: pre; padding: 2px 8px; font: 12px ui-monospace, monospace; }
-    .line { flex: 0 0 4em; border-radius: 0; padding: 2px; font: 12px ui-monospace, monospace; text-align: right; }
-    .add { background: #22883325; } .remove { background: #bb222225; } .meta { color: var(--pi-muted, #999); }
-    .selected { background: var(--pi-selection-bg, #336699); } .inline-comment, article, .editor { padding: 10px; margin: 8px 0; border: 1px solid var(--pi-border, #666); border-radius: 6px; white-space: normal; overflow-wrap: anywhere; }
-    .inline-comment { max-width: 75ch; } [role=alert], .stale { color: var(--pi-warning, #ecb65b); }
-    .markdown pre, .inline-comment pre { overflow: auto; } a { color: var(--pi-accent, #6cf); }
-  `;
+  static override styles = reviewStyles;
 }

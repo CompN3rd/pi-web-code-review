@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { html, render, svg } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FileContentResponse, PluginActivationResult, PluginPromptChip } from "@jmfederico/pi-web/plugin-api";
+import type { FileContentResponse, PluginActivationResultV5, PluginPromptChip } from "@jmfederico/pi-web/plugin-api";
 import plugin from "../src/browser/index.js";
 import { ReviewPanel } from "../src/browser/panel.js";
+import { preferencesKey } from "../src/browser/preferences.js";
+import { stylesheetIntegration } from "../src/browser/styling.js";
 import { renderReviewMarkdown } from "../src/browser/markdown.js";
 import { ReviewStore, storagePrefix, workspaceKey, type Comment } from "../src/browser/model.js";
 import { context, savedComment } from "./context.js";
@@ -45,7 +47,9 @@ function button(panel: ReviewPanel, text: string): HTMLButtonElement {
 }
 async function mount(ctx = context()) {
   const lifetime = new AbortController();
-  const activation: PluginActivationResult = await plugin.activate({ apiVersion: 4, pluginId: "review", runtimePluginId: "review", html, svg, signal: new AbortController().signal, lifetimeSignal: lifetime.signal });
+  const activation: PluginActivationResultV5 = await plugin.activate({ apiVersion: 5, pluginId: "review", runtimePluginId: "review", html, svg, signal: new AbortController().signal, lifetimeSignal: lifetime.signal });
+  const createController = vi.fn();
+  await activation.start?.({ signal: lifetime.signal, capabilities: { resolve: (capability) => capability.parse({ createController, registerRoot: vi.fn(), subscribe: vi.fn() }) } });
   const contribution = required(activation.contributions.workspacePanels?.[0]);
   const host = document.createElement("div"); document.body.append(host);
   render(contribution.render(ctx), host);
@@ -53,7 +57,7 @@ async function mount(ctx = context()) {
   if (!(panel instanceof ReviewPanel)) throw new Error("Review panel missing");
   cleanups.push(() => { lifetime.abort(); void activation.dispose?.(new AbortController().signal); });
   await vi.waitFor(() => { expect(button(panel, "a.ts")).toBeDefined(); });
-  return { panel, ctx, host, contribution, lifetime, activation };
+  return { panel, ctx, host, contribution, lifetime, activation, createController };
 }
 async function open(panel: ReviewPanel) {
   await vi.waitFor(() => { expect(button(panel, "a.ts")).toBeDefined(); });
@@ -61,8 +65,7 @@ async function open(panel: ReviewPanel) {
   await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[aria-label="Current line 1"]')).not.toBeNull(); });
 }
 function chooseSource(panel: ReviewPanel, value: string): void {
-  const select = required(panel.shadowRoot?.querySelector("select"));
-  select.value = value; select.dispatchEvent(new Event("change"));
+  required(panel.shadowRoot?.querySelector<HTMLButtonElement>(`[data-source="${value}"]`)).click();
 }
 function submitComparison(panel: ReviewPanel): void {
   required(panel.shadowRoot?.querySelector('form[aria-label="Compare revisions"]')).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -72,7 +75,103 @@ async function editBody(panel: ReviewPanel, body: string) {
   textarea.value = body; textarea.dispatchEvent(new Event("input")); await panel.updateComplete;
 }
 
+async function setLayout(panel: ReviewPanel, layout: "focus" | "workbench") {
+  button(panel, "Review settings").click(); await panel.updateComplete;
+  required(panel.shadowRoot?.querySelector<HTMLInputElement>(`input[name="layout"][value="${layout}"]`)).click();
+  await panel.updateComplete;
+  button(panel, "Apply layout").click(); await panel.updateComplete;
+}
+
 describe("standalone Review panel", () => {
+  it("requires v5 stylesheet integration and installs shared styles once per panel", async () => {
+    const { panel, createController, host, contribution, ctx } = await mount();
+    expect(plugin.apiVersion).toBe(5);
+    expect(plugin.requires).toContain(stylesheetIntegration);
+    expect(createController).toHaveBeenCalledExactlyOnceWith(panel, { sharedUi: true });
+    await setLayout(panel, "focus");
+    render(null, host); render(contribution.render(ctx), host); await panel.updateComplete;
+    expect(createController).toHaveBeenCalledOnce();
+    expect(() => stylesheetIntegration.parse({})).toThrow("stylesheet-integration");
+  });
+  it("switches layouts without replacing the editor or losing file, range, body or scroll", async () => {
+    const { panel } = await mount(); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 3"]')).dispatchEvent(new MouseEvent("click", { shiftKey: true }));
+    await panel.updateComplete; await editBody(panel, "Keep draft and range");
+    const editor = required(panel.shadowRoot?.querySelector<HTMLTextAreaElement>(".editor textarea"));
+    const code = required(panel.shadowRoot?.querySelector(".code")); code.scrollTop = 30;
+    await setLayout(panel, "focus");
+    expect(panel.shadowRoot?.querySelector(".review-panel.focus")).not.toBeNull();
+    expect(panel.shadowRoot?.querySelector(".editor textarea")).toBe(editor);
+    expect(editor.value).toBe("Keep draft and range");
+    expect(panel.shadowRoot?.querySelector(".editor strong")?.textContent).toContain("a.ts:1-3");
+    expect(panel.shadowRoot?.querySelector(".code")).toBe(code);
+    expect(code.scrollTop).toBe(30);
+    expect(panel.shadowRoot?.querySelector(".file-heading h3")?.textContent).toBe("a.ts");
+    expect(panel.shadowRoot?.querySelector("dialog")?.open).toBe(false);
+    expect(JSON.parse(localStorage.getItem(preferencesKey) ?? "null")).toEqual({ layout: "focus", wrapCode: true });
+    const other = await mount();
+    expect(other.panel.shadowRoot?.querySelector(".review-panel.focus")).not.toBeNull();
+  });
+  it("cancels settings without changing layout and persists the wrap toggle", async () => {
+    const { panel } = await mount();
+    button(panel, "Review settings").click(); await panel.updateComplete;
+    required(panel.shadowRoot?.querySelector<HTMLInputElement>('input[value="focus"]')).click(); await panel.updateComplete;
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')).click(); await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".review-panel.workbench")).not.toBeNull();
+    const wrap = required(panel.shadowRoot?.querySelector<HTMLInputElement>('.wrap-control input')); wrap.click(); await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".review-panel.wrap")).toBeNull();
+    expect(JSON.parse(localStorage.getItem(preferencesKey) ?? "null")).toEqual({ layout: "workbench", wrapCode: false });
+  });
+  it("reports settings storage failure without discarding the applied layout or draft", async () => {
+    const { panel } = await mount(); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    await editBody(panel, "Still here");
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => { throw new Error("blocked"); }, clear: vi.fn() });
+    await setLayout(panel, "focus");
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("could not be saved");
+    expect(panel.shadowRoot?.querySelector<HTMLTextAreaElement>(".editor textarea")?.value).toBe("Still here");
+    expect(panel.shadowRoot?.querySelector(".review-panel.focus")).not.toBeNull();
+  });
+  it("opens the file sheet, navigates directories, then closes on file selection", async () => {
+    const ctx = context();
+    ctx.files.listFiles = vi.fn().mockImplementation((path: string) => Promise.resolve({ entries: path === "src" ? [{ name: "a.ts", path: "src/a.ts", type: "file" }] : [{ name: "a.ts", path: "a.ts", type: "file" }, { name: "src", path: "src", type: "directory" }] }));
+    const { panel } = await mount(ctx);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>(".file-switch")).click(); await panel.updateComplete;
+    const dialog = required(panel.shadowRoot?.querySelector("dialog")); expect(dialog.open).toBe(true);
+    required([...dialog.querySelectorAll("button")].find(item => item.textContent.includes("📁 src"))).click();
+    await vi.waitFor(() => { expect(dialog.textContent).toContain("Parent directory"); });
+    expect(dialog.open).toBe(true);
+    required([...dialog.querySelectorAll("button")].find(item => item.textContent.trim() === "a.ts")).click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector(".file-heading h3")?.textContent).toBe("src/a.ts"); });
+    expect(dialog.open).toBe(false);
+  });
+  it("opens saved notes in a modal and returns to a valid editor", async () => {
+    const { panel } = await mount(); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    await editBody(panel, "Saved note"); button(panel, "Save comment").click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector("article")).not.toBeNull(); });
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>(".mobile-notes")).click(); await panel.updateComplete;
+    const dialog = required(panel.shadowRoot?.querySelector("dialog")); expect(dialog.open).toBe(true);
+    expect(dialog.textContent).toContain("Saved note");
+    required([...dialog.querySelectorAll("button")].find(item => item.textContent.trim() === "Edit comment")).click();
+    await vi.waitFor(() => { expect(button(panel, "Save comment").disabled).toBe(false); });
+    expect(dialog.open).toBe(false);
+    expect(panel.shadowRoot?.querySelector<HTMLTextAreaElement>(".editor textarea")?.value).toBe("Saved note");
+  });
+  it("keeps a detached draft safe when navigating to the next file", async () => {
+    const ctx = context();
+    ctx.files.listFiles = vi.fn().mockResolvedValue({ entries: [{ path: "a.ts", name: "a.ts", type: "file" }, { path: "b.ts", name: "b.ts", type: "file" }] });
+    const { panel } = await mount(ctx); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    await editBody(panel, "Belongs to a.ts");
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Next file"]')).click();
+    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector(".file-heading h3")?.textContent).toBe("b.ts"); });
+    expect(button(panel, "Save comment").disabled).toBe(true);
+    expect(panel.shadowRoot?.querySelector<HTMLTextAreaElement>(".editor textarea")?.value).toBe("Belongs to a.ts");
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Previous file"]')).click();
+    await vi.waitFor(() => { expect(button(panel, "Save comment").disabled).toBe(false); });
+  });
   it("opens and focuses the draft directly beneath the selected code line", async () => {
     const { panel } = await mount(); await open(panel);
     const line = required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]'));
@@ -121,6 +220,8 @@ describe("standalone Review panel", () => {
     button(panel, "compared.ts").click();
     await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[aria-label="Current line 1"]')).not.toBeNull(); });
     required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click(); await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".add code")?.textContent).toBe("new");
+    expect(panel.shadowRoot?.querySelector(".add .sign")?.textContent).toBe("+");
     await editBody(panel, "Across several commits"); button(panel, "Save comment").click();
     await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector("article")).not.toBeNull(); });
     expect((await required(panel.store).load(workspaceKey(ctx)))[0]?.comparison).toEqual(original);
@@ -132,7 +233,7 @@ describe("standalone Review panel", () => {
     submitComparison(panel); await panel.updateComplete;
     await vi.waitFor(() => {
       expect(button(panel, "compared.ts").disabled).toBe(false);
-      expect(panel.shadowRoot?.querySelector("summary")?.textContent).toContain("HEAD~3");
+      expect(panel.shadowRoot?.querySelector(".file-list summary")?.textContent).toContain("HEAD~3");
     });
     expect(peer).toHaveBeenCalledWith("compare", { source: "git-compare", baseRef: "HEAD~3", headRef: "HEAD", mode: "direct" }, expect.anything());
     button(panel, "compared.ts").click();
@@ -225,7 +326,7 @@ describe("standalone Review panel", () => {
     const ctx = context(); let finish: ((value: FileContentResponse) => void) | undefined;
     ctx.files.readFile = vi.fn(() => new Promise<FileContentResponse>((resolve) => { finish = resolve; }));
     const { panel, host } = await mount(ctx); button(panel, "a.ts").click();
-    const select = required(panel.shadowRoot?.querySelector("select")); select.value = "git-staged"; select.dispatchEvent(new Event("change"));
+    chooseSource(panel, "git-staged");
     required(finish)({ path: "a.ts", content: "obsolete", encoding: "utf8", size: 8, modifiedAt: "now", binary: false, truncated: false });
     await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector('[role="status"]')?.textContent).not.toContain("Loading"); });
     expect(panel.shadowRoot?.textContent).not.toContain("obsolete");
@@ -408,7 +509,7 @@ describe("standalone Review panel", () => {
   });
   it("requests a badge rerender even before the Review panel is mounted", async () => {
     const lifetime = new AbortController(); const ctx = context();
-    const activation = await plugin.activate({ apiVersion: 4, pluginId: "review", runtimePluginId: "review", html, svg, signal: new AbortController().signal, lifetimeSignal: lifetime.signal });
+    const activation = await plugin.activate({ apiVersion: 5, pluginId: "review", runtimePluginId: "review", html, svg, signal: new AbortController().signal, lifetimeSignal: lifetime.signal });
     cleanups.push(() => { lifetime.abort(); void activation.dispose?.(new AbortController().signal); });
     const contribution = required(activation.contributions.workspacePanels?.[0]);
     contribution.badge?.(ctx);

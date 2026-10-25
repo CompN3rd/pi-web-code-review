@@ -1,6 +1,6 @@
 {
   "name": "@compn3rd/pi-web-code-review",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -15,7 +15,8 @@
     "dist",
     "README.md",
     "CHANGELOG.md",
-    "docs",
+    "docs/*.md",
+    "docs/screenshots",
     "LICENSE"
   ],
   "scripts": {
@@ -24,12 +25,13 @@
     "lint": "eslint src test",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "check:artifacts": "node scripts/check-artifacts.mjs",
+    "check:browser": "node scripts/check-browser.mjs",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build && npm run check:artifacts",
     "prepack": "npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@jmfederico/pi-web": ">=1.202610.3",
+    "@jmfederico/pi-web": "^1.202610.6",
     "@noble/hashes": "^2.4.0",
     "@types/node": "^24.13.3",
     "eslint": "^10.6.0",
@@ -40,8 +42,8 @@
     "marked": "^18.0.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
-    "vite": "^8.1.4",
-    "vitest": "^4.1.10"
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22.19.0"

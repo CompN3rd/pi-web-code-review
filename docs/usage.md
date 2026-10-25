@@ -1,6 +1,6 @@
 # Code Review workflow
 
-Version **0.1.2** requires **PI WEB >=1.202610.3**. Automated tests, builds, and artifact smoke checks passed against `1.202610.3`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
+Version **0.2.0** requires **PI WEB >=1.202610.6**. Automated tests, builds, artifact smoke checks and production-bundle Chromium checks passed against `1.202610.6`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
 
 ## Install the standalone package
 
@@ -39,8 +39,8 @@ For remote workspaces, install and enable the package on each target machine. Gi
 ## Review files and changes
 
 1. Select a workspace and open the **Review** tab (or **Open Code Review** in the action palette).
-2. Choose **Files**, **Git unstaged**, **Git staged**, or **Compare revisions**. Files includes untracked files. Browse directories or enter a workspace-relative file path. For committed work across multiple commits, use the comparison controls below.
-3. Click a line number to open and focus the comment editor directly below it inside the viewer. Shift-click extends its range on the same side; on touch screens, edit **Start line** and **End line** instead. Deleted diff lines use old-side coordinates; context and additions use new-side coordinates. Ranges cannot span omitted diff context.
+2. Choose **Files**, **Unstaged**, **Staged**, or **Compare**. Files includes untracked files. Browse directories or expand **Open a file by path** to enter a workspace-relative file path. For committed work across multiple commits, use the comparison controls below.
+3. Click a line number to open and focus the comment editor directly below it inside the viewer. Shift-click extends its range on the same side; on touch screens, expand **Line range** and edit **Start line** and **End line** instead. Deleted diff lines use old-side coordinates; context and additions use new-side coordinates. Ranges cannot span omitted diff context.
 4. Enter Markdown and choose **Save comment**. Ctrl/Cmd+Enter also saves; ordinary Enter inserts a newline.
 5. Review the saved list. **Edit comment** reloads its source before allowing a save; **Remove comment** deletes that comment.
 
@@ -48,9 +48,19 @@ Comments render safe Markdown: raw HTML is displayed as text, images do not load
 
 Saved comments are local to this browser origin, keyed by machine, project, and workspace. They survive reloads and session changes; they are not synchronized across browsers or machines. IndexedDB transactions serialize concurrent saves and acknowledgements across tabs, so independent comments are not lost through competing read/modify/write operations. IndexedDB does not require HTTPS or Web Locks; LAN HTTP remains supported where the browser permits origin storage. Storage errors are shown and an unsuccessful save leaves the editor text available. Corrupt or unrecognized storage is not overwritten automatically. Feedback warnings remain separate from source-loading errors, survive panel/workspace remounts within the activation, and stay visible until explicitly dismissed.
 
+### Layout and phone controls
+
+Choose **Review settings** in the panel header. **Workbench** shows files, code and saved notes in columns on wide panels (notes move below at intermediate widths). **Focus** hides the persistent file list, keeps feedback inline and collapses the saved-review summary. Switching layouts preserves the current file, range, draft and code-view DOM; normal responsive reflow can adjust scroll geometry.
+
+On panels at most 640px wide, use **Files** (Workbench) or the current filename (Focus) to open a file sheet. **Notes** opens all saved feedback. Choose a file to close the sheet; opening a directory keeps it open for browsing. Close sheets with the close button or Escape. Desktop previous/next controls navigate the current file list.
+
+**Wrap code** is enabled by default. Turning it off scrolls long source lines inside the code viewer; comments and the draft remain constrained to the viewer width. Wrapping does not change original line coordinates. Layout and wrapping choices are stored per browser origin, shared across workspaces on subsequent panel creation; existing tabs do not live-sync these preferences. A failed settings write is reported without affecting saved comments.
+
+Settings are in the Review panel, not the host-wide settings screen. Unsaved drafts still need to be saved before reloading or switching workspaces. Neither applying settings nor attaching a review sends a message.
+
 ### Review accumulated branch or commit changes
 
-Select **Compare revisions**, enter **Base revision** and **Target revision**, then choose a comparison mode and click **Compare**:
+Select **Compare**, enter **Base revision** and **Target revision**, then choose a comparison mode and click **Compare**:
 
 | Goal | Base | Target | Mode |
 | --- | --- | --- | --- |
