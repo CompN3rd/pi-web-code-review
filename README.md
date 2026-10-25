@@ -40,3 +40,13 @@ Live-host shared styling, real phone keyboards, remote-machine behavior and end-
 See the [usage guide](docs/usage.md), [development guide](docs/development.md), [compatibility results](docs/compatibility.md), and [composer design](docs/composer-design.md).
 
 Adapted from the Code Review UI branch and PI WEB's MIT-licensed plugin examples; see [LICENSE](LICENSE).
+
+## Community discovery
+
+This package declares `piWeb.plugins` and the `pi-web.dev-plugin`, `pi-package`,
+and `pi-web-plugin` npm keywords required by the
+[PI WEB community directory](https://pi-web.dev/community-plugins). No separate
+registration or submission is needed. Discovery requires publishing a new public
+npm version containing this metadata; npm search indexing may take time. Source
+changes alone do not update the directory. The compatibility and installation
+requirements above still apply.
