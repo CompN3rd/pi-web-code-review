@@ -28,6 +28,15 @@ export class ReviewPanel extends LitElement {
   private dialogKind: "settings" | "files" | "notes" | undefined;
   private preferenceError = "";
   private source: ReviewSource = "files";
+  private diffContext: number | "all" = 3;
+  private scrollPositions = new Map<Element, { top: number; left: number }>();
+  private restoringScroll = false;
+  private rememberScroll = (event: Event): void => {
+    const target = event.target === this.ownerDocument ? this.ownerDocument.scrollingElement : event.target;
+    if (this.isConnected && !this.restoringScroll && target instanceof Element && (this.renderRoot.contains(target) || target.contains(this))) {
+      this.scrollPositions.set(target, { top: target.scrollTop, left: target.scrollLeft });
+    }
+  };
   private baseRef = "main";
   private headRef = "HEAD";
   private comparisonMode: GitComparison["mode"] = "merge-base";
@@ -58,10 +67,35 @@ export class ReviewPanel extends LitElement {
     super.connectedCallback();
     this.connection++;
     void this.loadComments();
-    void this.refresh();
+    this.renderRoot.addEventListener("scroll", this.rememberScroll, true);
+    this.ownerDocument.addEventListener("scroll", this.rememberScroll, true);
+    // Reattaching the same panel is navigation, not a request to reset a comparison.
+    if (this.view === undefined) void this.refresh();
+    else void this.loadList();
+    const positions = new Map(this.scrollPositions);
+    const connection = this.connection;
+    this.restoringScroll = true;
+    void this.updateComplete.then(() => {
+      const restore = () => {
+        if (!this.isConnected || this.connection !== connection) return;
+        for (const [element, position] of positions) {
+          element.scrollTop = position.top; element.scrollLeft = position.left;
+        }
+      };
+      restore();
+      // Host layout and document scroll ranges settle after the panel is inserted.
+      const window = this.ownerDocument.defaultView;
+      if (window === null) { this.restoringScroll = false; return; }
+      window.requestAnimationFrame(() => {
+        restore();
+        window.requestAnimationFrame(() => { if (this.connection === connection) this.restoringScroll = false; });
+      });
+    });
   }
   override disconnectedCallback(): void {
     this.connection++; this.feedbackRead++;
+    this.renderRoot.removeEventListener("scroll", this.rememberScroll, true);
+    this.ownerDocument.removeEventListener("scroll", this.rememberScroll, true);
     this.closeDialog();
     this.listing?.abort(); this.reading?.abort(); this.comparing?.abort();
     super.disconnectedCallback();
@@ -121,6 +155,7 @@ export class ReviewPanel extends LitElement {
     return this.lifetime === undefined ? controller.signal : AbortSignal.any([controller.signal, this.lifetime]);
   }
   private async applyComparison(): Promise<void> {
+    const path = this.view?.path;
     this.comparing?.abort(); this.listing?.abort(); this.reading?.abort();
     const controller = new AbortController(); this.comparing = controller;
     const signal = this.signal(controller);
@@ -135,6 +170,8 @@ export class ReviewPanel extends LitElement {
       if (signal.aborted) return;
       this.comparison = comparison;
       await this.loadList();
+      signal.throwIfAborted();
+      if (path !== undefined) await this.openFile(path);
     } catch (error) { if (!signal.aborted) this.fail(error); }
     finally { if (this.comparing === controller) { this.comparing = undefined; this.requestUpdate(); } }
   }
@@ -176,6 +213,7 @@ export class ReviewPanel extends LitElement {
     try {
       if (!isWorkspacePath(path)) throw new Error("Enter a workspace-relative file path");
       let text: string;
+      let canonical: string | undefined;
       if (source === "files") {
         const result = this.context.files.capabilityVersion === 1
           ? await this.context.files.readFile(path, { signal }) : await this.context.files.readFile(path);
@@ -184,10 +222,19 @@ export class ReviewPanel extends LitElement {
       } else {
         const peer = this.context.peer;
         if (peer?.request === undefined) throw new Error("Git review backend unavailable");
-        text = parseDiff(await peer.request("diff", { source, path, ...(comparison === undefined ? {} : { comparison: { ...comparison } }) }, { signal }));
+        const input = { source, path, ...(comparison === undefined ? {} : { comparison: { ...comparison } }) };
+        text = parseDiff(await peer.request("diff", { ...input, context: this.diffContext }, { signal }));
+        // Keep existing saved-comment fingerprints independent of display context.
+        if (this.diffContext !== 3) canonical = parseDiff(await peer.request("diff", { ...input, context: 3 }, { signal }));
       }
       const next = snapshot(path, source, text, comparison);
+      if (canonical !== undefined) next.hash = snapshot(path, source, canonical, comparison).hash;
       if (signal.aborted) return;
+      if (this.view?.path !== path) {
+        this.scrollPositions.clear();
+        const code = this.renderRoot.querySelector(".code");
+        if (code !== null) { code.scrollTop = 0; code.scrollLeft = 0; }
+      }
       this.view = next;
       if (this.editor !== undefined) this.focusEditor = true;
       // Never attach an unfinished comment to refreshed or unrelated content.
@@ -196,6 +243,26 @@ export class ReviewPanel extends LitElement {
       }
     } catch (error) { if (!signal.aborted) { this.view = undefined; this.fail(error); } }
     finally { if (this.reading === controller) { this.viewLoading = false; this.requestUpdate(); } }
+  }
+  private async changeDiffContext(value: string): Promise<void> {
+    const previous = this.view;
+    const code = this.renderRoot.querySelector<HTMLElement>(".code");
+    const top = code?.getBoundingClientRect().top ?? 0;
+    const line = [...this.renderRoot.querySelectorAll<HTMLButtonElement>(".code button.line")]
+      .find((button) => button.getBoundingClientRect().bottom > Math.max(0, top));
+    const label = line?.getAttribute("aria-label");
+    const offset = line?.getBoundingClientRect().top ?? top;
+    this.diffContext = value === "all" ? "all" : Number(value);
+    if (this.view !== undefined) await this.openFile(this.view.path);
+    this.requestUpdate(); await this.updateComplete;
+    if (!this.isConnected || label == null || code === null || !code.isConnected
+      || this.view?.path !== previous?.path || this.view?.source !== previous?.source) return;
+    const next = [...code.querySelectorAll<HTMLButtonElement>("button.line")].find((button) => button.getAttribute("aria-label") === label);
+    if (next !== undefined) {
+      const delta = next.getBoundingClientRect().top - offset;
+      if (code.scrollHeight > code.clientHeight) code.scrollTop += delta;
+      else if (offset >= 0) this.ownerDocument.defaultView?.scrollBy(0, delta);
+    }
   }
   private selectSource(value: string): void {
     if (value !== "files" && !isGitSource(value)) return;
@@ -374,6 +441,17 @@ export class ReviewPanel extends LitElement {
         ${([ ["files", "Files"], ["git-unstaged", "Unstaged"], ["git-staged", "Staged"], ["git-compare", "Compare"] ] as const).map(([value, label]) => html`<button class="ui-button" data-source=${value} aria-pressed=${String(this.source === value)} @click=${() => { if (this.source !== value) this.selectSource(value); }}>${label}</button>`)}
       </div><button class="ui-button" @click=${() => { void this.refresh(); }}>Refresh</button></div>
       <div class="source-controls">
+      ${this.source === "files" ? null : html`<label class="toolbar context-control">Diff context
+        <select aria-label="Diff context" .value=${String(this.diffContext)} ?disabled=${this.viewLoading || this.editor !== undefined}
+          title="Save or cancel an unfinished comment before changing context"
+          @change=${(event: Event) => {
+            if (!(event.target instanceof HTMLSelectElement)) return;
+            const value = event.target.value;
+            void this.changeDiffContext(value);
+          }}>
+          <option value="3">3 lines</option><option value="20">20 lines</option><option value="100">100 lines</option><option value="all">Whole file</option>
+        </select>
+      </label>`}
       ${this.source === "files" ? html`<details><summary>Open a file by path</summary><form class="toolbar" @submit=${(event: SubmitEvent) => {
         event.preventDefault(); const form = event.currentTarget;
         if (form instanceof HTMLFormElement) {

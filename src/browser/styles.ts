@@ -26,6 +26,8 @@ export const reviewStyles = css`
   .source-controls .toolbar > label { flex: 1; min-width: 120px; }
   label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
   .source-controls input, .source-controls select { width: 100%; min-width: 0; }
+  .source-controls .context-control { flex-direction: row; align-items: center; justify-content: flex-start; }
+  .source-controls .context-control select { width: auto; min-width: 150px; }
   .source-controls details { margin: 10px 0; } summary { cursor: pointer; overflow-wrap: anywhere; }
   .source-help { margin: 10px 0; }
   .notice { padding: 12px 16px; overflow-wrap: anywhere; } .notice:empty { display: none; }

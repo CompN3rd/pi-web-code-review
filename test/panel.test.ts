@@ -83,6 +83,20 @@ async function setLayout(panel: ReviewPanel, layout: "focus" | "workbench") {
 }
 
 describe("standalone Review panel", () => {
+  it("retains file, draft and scroll when leaving and returning to Review", async () => {
+    const { panel, host, contribution, ctx } = await mount(); await open(panel);
+    required(panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Current line 1"]')).click();
+    await panel.updateComplete; await editBody(panel, "Keep this draft");
+    const code = required(panel.shadowRoot?.querySelector(".code"));
+    code.scrollTop = 42; code.scrollLeft = 12; code.dispatchEvent(new Event("scroll"));
+    render(null, host);
+    code.scrollTop = 0; code.scrollLeft = 0;
+    render(contribution.render(ctx), host); await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".file-heading h3")?.textContent).toBe("a.ts");
+    expect(panel.shadowRoot?.querySelector<HTMLTextAreaElement>(".editor textarea")?.value).toBe("Keep this draft");
+    expect(code.scrollTop).toBe(42); expect(code.scrollLeft).toBe(12);
+  });
+
   it("requires v5 stylesheet integration and installs shared styles once per panel", async () => {
     const { panel, createController, host, contribution, ctx } = await mount();
     expect(plugin.apiVersion).toBe(5);
@@ -241,7 +255,7 @@ describe("standalone Review panel", () => {
     expect(panel.shadowRoot?.querySelector(".inline-comment")).toBeNull();
     button(panel, "Edit comment").click();
     await vi.waitFor(() => { expect(button(panel, "Save comment").disabled).toBe(false); });
-    expect(peer).toHaveBeenLastCalledWith("diff", { source: "git-compare", path: "compared.ts", comparison: original }, expect.anything());
+    expect(peer).toHaveBeenLastCalledWith("diff", { source: "git-compare", path: "compared.ts", comparison: original, context: 3 }, expect.anything());
     expect(required(panel.shadowRoot?.querySelector<HTMLInputElement>('input[name="base"]')).value).toBe("main");
     expect(panel.shadowRoot?.querySelector(".inline-comment")?.textContent).toContain("Across several commits");
   });

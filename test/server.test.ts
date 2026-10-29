@@ -14,6 +14,17 @@ function request(input: ServerPluginPeerRequestContext["input"], operation = "di
 const success = { exitCode: 0, signal: null, stdout: "", stderr: "", stdoutTruncated: false, stderrTruncated: false };
 
 describe("read-only Git peer", () => {
+  it.each([3, 20, 100, "all"])("accepts diff context %s", async (context) => {
+    const exec = vi.fn<ServerPluginActivationContext["execFile"]>().mockResolvedValue(success);
+    await requestGit(exec, request({ source: "git-unstaged", path: "a.ts", context }));
+    expect(exec.mock.calls[0]?.[0].args).toContain(`--unified=${context === "all" ? "2147483647" : String(context)}`);
+  });
+  it.each([-1, 1.5, 1001, "--output=oops", {}])("rejects invalid diff context %s", async (context) => {
+    const exec = vi.fn<ServerPluginActivationContext["execFile"]>();
+    await expect(requestGit(exec, request({ source: "git-unstaged", path: "a.ts", context }))).rejects.toThrow("Invalid diff context");
+    expect(exec).not.toHaveBeenCalled();
+  });
+
   it("uses host-resolved workspace, literal argv paths, no external drivers, and cancellation", async () => {
     const exec = vi.fn<ServerPluginActivationContext["execFile"]>().mockResolvedValue({ ...success, stdout: "diff" });
     const input = request({ path: "odd ' $(touch nope).ts", source: "git-staged", cwd: "/attacker" });
@@ -44,10 +55,11 @@ it("reads staged and unstaged snapshots from a real Git repository without modif
   const exec = promisify(nodeExecFile);
   const git = (...args: string[]) => exec("git", ["-C", root, ...args]);
   await git("init");
-  await writeFile(join(root, "a.ts"), "base\n"); await git("add", "a.ts");
+  const surrounding = Array.from({ length: 30 }, (_, i) => `context ${String(i)}\n`).join("");
+  await writeFile(join(root, "a.ts"), `${surrounding}base\n`); await git("add", "a.ts");
   await git("-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-m", "base");
-  await writeFile(join(root, "a.ts"), "staged\n"); await git("add", "a.ts");
-  await writeFile(join(root, "a.ts"), "working\n");
+  await writeFile(join(root, "a.ts"), `${surrounding}staged\n`); await git("add", "a.ts");
+  await writeFile(join(root, "a.ts"), `${surrounding}working\n`);
   const adapter: ServerPluginActivationContext["execFile"] = async ({ file, args, signal }) => {
     const result = await exec(file, [...args ?? []], { signal });
     return { ...success, stdout: result.stdout, stderr: result.stderr };
@@ -56,7 +68,15 @@ it("reads staged and unstaged snapshots from a real Git repository without modif
   const scope = { ...staged, workspace: { ...staged.workspace, path: root } };
   expect(await requestGit(adapter, scope)).toContain("+staged");
   expect(await requestGit(adapter, { ...scope, input: { source: "git-unstaged", path: "a.ts" } })).toContain("+working");
-  expect((await git("show", ":a.ts")).stdout).toBe("staged\n");
+  for (const source of ["git-staged", "git-unstaged"]) {
+    const compact = await requestGit(adapter, { ...scope, input: { source, path: "a.ts" } });
+    const expanded = await requestGit(adapter, { ...scope, input: { source, path: "a.ts", context: "all" } });
+    expect(compact).not.toContain("context 0");
+    expect(expanded).toContain("context 0");
+    expect(expanded).toContain(source === "git-staged" ? "+staged" : "+working");
+    expect(expanded).toContain(source === "git-staged" ? "-base" : "-staged");
+  }
+  expect((await git("show", ":a.ts")).stdout).toBe(`${surrounding}staged\n`);
 }, 20_000);
 
 it("overrides diff.submodule=diff so nested file coordinates never enter the gitlink snapshot", async () => {

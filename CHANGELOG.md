@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- Retain file, frozen comparison, draft, context setting and desktop/mobile scroll when returning from chat to Review in the same workspace.
+- Git diff context selector: 3, 20, 100 lines or Whole file, with additions/deletions highlighted and saved-comment fingerprints independent of display context.
+- Reproducible production Chromium UI checks, screenshots and a GitHub Actions UI review workflow.
+- Approval-gated npm trusted publishing using GitHub OIDC, provenance, SHA-pinned actions and an isolated publish job consuming the tested tarball. No npm token secret is required.
+- PI WEB community-discovery keywords (previously committed after 0.2.0 publication).
+
+### Validation and limits
+
+- Typecheck, lint, 109 tests, production build, artifact smoke and Chromium UI checks pass. Navigation state remains in memory, not across reloads/workspace switches.
+- Context changes require saving/cancelling drafts first. Binary/oversized sources retain existing limits.
+- Runtime dependency audit is clean; the development tree currently reports 5 advisories (3 moderate, 2 high), tracked separately from release runtime dependencies.
+- Live-host styling, remote/send acceptance and real-device checks remain outstanding; no daemon restart is performed.
+
 ## 0.2.0
 
 ### Added

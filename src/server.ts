@@ -37,7 +37,13 @@ export async function requestGit(execFile: ServerPluginActivationContext["execFi
   const args = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--submodule=short", "--relative"];
   if (input["source"] === "git-staged") args.push("--cached");
   if (operation === "changes") args.push("--name-only", "-z");
-  else args.push("--unified=3");
+  else {
+    const context = input["context"] ?? 3;
+    if (context !== "all" && (typeof context !== "number" || !Number.isInteger(context) || context < 0 || context > 1000)) {
+      throw new Error("Invalid diff context");
+    }
+    args.push(`--unified=${context === "all" ? "2147483647" : String(context)}`);
+  }
   if (comparison !== undefined) args.push(comparison.base, comparison.head);
   args.push("--");
   if (operation === "diff" && typeof path === "string") args.push(path);

@@ -1,0 +1,89 @@
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'CompN3rd/pi-web-code-review'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release tag and main ancestry
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (!/^\d+\.\d+\.\d+$/.test(pkg.version) || process.env.GITHUB_REF !== `refs/tags/v${pkg.version}`) throw new Error('Run only on a stable v<package-version> tag');
+          if (pkg.name !== '@compn3rd/pi-web-code-review' || lock.version !== pkg.version || lock.packages[''].version !== pkg.version) throw new Error('Package/lock mismatch');
+          NODE
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run verify
+      - run: npm run check:browser
+      - name: Pack the verified build and smoke-test its contents
+        shell: bash
+        run: |
+          mkdir -p release unpacked
+          npm pack --ignore-scripts --pack-destination release
+          tar -xzf release/*.tgz -C unpacked
+          node scripts/check-artifacts.mjs "$PWD/unpacked/package"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-package
+          path: release/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-ui-screenshots
+          path: artifacts/review-ui
+          retention-days: 7
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Require an OIDC-capable npm CLI
+        shell: bash
+        run: |
+          NPM_VERSION="$(npm --version)" node -e 'const [a,b,c] = process.env.NPM_VERSION.split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) throw new Error("npm >=11.5.1 required")'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: npm-package
+          path: release
+      - name: Publish verified tarball with OIDC and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --version
+          packages=(release/*.tgz)
+          test "${#packages[@]}" -eq 1
+          npm publish "${packages[0]}" --access public --provenance --ignore-scripts

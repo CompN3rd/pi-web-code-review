@@ -4,7 +4,7 @@ A standalone Review tab for workspace files, staged/unstaged Git changes, and ac
 
 ## Requirements and installation
 
-Version **0.2.0** requires **PI WEB >=1.202610.6**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Tested against PI WEB `1.202610.6`; later releases have not been independently verified.
+Version **0.3.0** requires **PI WEB >=1.202610.6**, Node.js **>=22.19.0**, and Git for staged/unstaged and revision-comparison review. Tested against PI WEB `1.202610.6`; later releases have not been independently verified.
 
 Install `npm:@compn3rd/pi-web-code-review` through **Settings → Pi packages** on the target machine, then enable **Code Review** in **Settings → PI WEB plugins**. For local builds and manual installation, see the [usage guide](docs/usage.md).
 
@@ -25,6 +25,12 @@ The layout and **Wrap code** preference are saved for this browser, across works
 
 Screenshots render the production bundle with sample backend data, not a live PI WEB host. Phone captures use Chromium at phone viewport sizes, not real devices.
 
+## Keep your place and expand diffs
+
+Returning from chat to Review in the same workspace preserves the file, draft, frozen comparison and scroll position. Git views offer **3 / 20 / 100 context lines** or **Whole file**, with changes still highlighted. Navigation state is in memory; reloads and workspace switches reset it. Existing file-size limits still apply.
+
+![Expanded diff](docs/screenshots/0.3.0/expanded-desktop.png)
+
 ## Review workflow
 
 Choose **Files**, **Unstaged**, **Staged**, or **Compare**. Compare `main...HEAD` for branch work since its merge base, or `HEAD~3..HEAD` for accumulated work between commits. Comparison comments retain frozen commit IDs.
@@ -33,11 +39,11 @@ Click or tap a line number to open an inline comment editor. Shift-click extends
 
 ## Validation
 
-Typechecking, lint, **99 tests**, builds, and unpacked/packed artifact smoke checks pass. Production-bundle Chromium checks cover dark/light palettes, phone widths **360/390/430px**, wrapping, settings, draft preservation, sheets, keyboard modality, range editing and mocked composer attachment. `npm audit` reports no known vulnerabilities in the resolved dependency tree.
+Typechecking, lint, **109 tests**, builds, and unpacked/packed artifact smoke checks pass. Production-bundle Chromium checks cover dark/light palettes, phone widths **360/390/430px**, wrapping, settings, draft preservation, sheets, keyboard modality, range editing and mocked composer attachment. `npm audit --omit=dev` reports no known vulnerabilities; the full development tree currently reports 5 advisories (3 moderate, 2 high). These tooling dependencies are not shipped as runtime dependencies.
 
 Live-host shared styling, real phone keyboards, remote-machine behavior and end-to-end send acceptance remain follow-up validation; they are not claimed as completed.
 
-See the [usage guide](docs/usage.md), [development guide](docs/development.md), [compatibility results](docs/compatibility.md), and [composer design](docs/composer-design.md).
+See the [release/publishing guide](docs/releasing.md), [UI testing workflow](docs/ui-testing.md), [usage guide](docs/usage.md), [development guide](docs/development.md), [compatibility results](docs/compatibility.md), and [composer design](docs/composer-design.md).
 
 Adapted from the Code Review UI branch and PI WEB's MIT-licensed plugin examples; see [LICENSE](LICENSE).
 

@@ -6,9 +6,9 @@ This repository starts from the plugin snapshot in [CompN3rd/pi-web at `d0c7a212
 
 ## Verification status
 
-The development dependency targets PI WEB `^1.202610.6`, with a concrete lockfile resolution. The browser entry uses API v5 and public stylesheet-integration v1; the unchanged server entry uses supported API v3. There are no local replacement declarations. Typechecking, all 99 tests, the build, and unpacked/packed artifact smoke checks pass. Full `verify` and standalone production-browser checks pass; live-host testing is still pending. See [compatibility results](compatibility.md).
+The development dependency targets PI WEB `^1.202610.6`, with a concrete lockfile resolution. The browser entry uses API v5 and public stylesheet-integration v1; the unchanged server entry uses supported API v3. There are no local replacement declarations. Typechecking, all 109 tests, the build, and unpacked/packed artifact smoke checks pass. Full `verify` and standalone production-browser checks pass; live-host testing is still pending. See [compatibility results](compatibility.md).
 
-The `0.2.0` release is enabled for publication with live-host testing tracked as follow-up work in the [validation checklist](composer-design.md#release-gate). Reproduce validation with:
+The `0.3.0` release is enabled for publication with live-host testing tracked as follow-up work in the [validation checklist](composer-design.md#release-gate). Reproduce validation with:
 
 ```sh
 npm ci --ignore-scripts
@@ -22,14 +22,17 @@ Prepared cases cover actual adapter serialization on two IndexedDB connections, 
 
 ## Production browser checks
 
-Install Playwright in a separate tools directory (or supply an existing installation), ensure its Chromium browser is available, then run:
+Playwright is a development dependency. Install its Chromium browser, then run:
 
 ```sh
+npx playwright install chromium
 npm run build
-npm run check:browser -- /absolute/path/to/playwright/index.mjs
+npm run check:browser
 ```
 
-This starts a temporary localhost Vite server, loads the built plugin with native browser storage and sample host/backend adapters, checks the responsive interactions, captures `docs/screenshots/0.2.0/`, then closes browser and server. It never starts PI WEB or restarts its daemon. The host stylesheet capability is mocked; test shared CSS and real mobile keyboards separately. The earlier `docs/redesign/` study is historical and excluded from npm; the production harness under `scripts/browser/` is the acceptance source.
+This starts a temporary localhost Vite server, loads the built plugin with native browser storage and sample host/backend adapters, checks the responsive interactions, captures `artifacts/review-ui/`, then closes browser and server. It never starts PI WEB or restarts its daemon. The host stylesheet capability is mocked; test shared CSS and real mobile keyboards separately. The earlier `docs/redesign/` study is historical and excluded from npm; the production harness under `scripts/browser/` is the acceptance source.
+
+See [UI testing](ui-testing.md) for the screenshot-review checklist and [releasing](releasing.md) for approval-gated npm publishing.
 
 ## Boundaries
 
@@ -38,4 +41,4 @@ This starts a temporary localhost Vite server, loads the built plugin with nativ
 - The Markdown renderer is adapted from PI WEB's MIT-licensed Captain's Log example. It renders known lexer tokens through Lit text bindings, not unsafe HTML.
 - Browser dependencies are bundled under `dist/browser`; server JavaScript remains outside that public directory. The whole plugin can be built separately from the host after the dependency gate is satisfied.
 
-Version `0.2.0` is packaged for public npm distribution as `@compn3rd/pi-web-code-review`. Release publication is separate from host installation and activation. Do not publish the PI WEB host to ship this plugin.
+Version `0.3.0` is packaged for public npm distribution as `@compn3rd/pi-web-code-review`. Release publication is separate from host installation and activation. Do not publish the PI WEB host to ship this plugin.

@@ -1,6 +1,6 @@
 # Code Review workflow
 
-Version **0.2.0** requires **PI WEB >=1.202610.6**. Automated tests, builds, artifact smoke checks and production-bundle Chromium checks passed against `1.202610.6`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
+Version **0.3.0** requires **PI WEB >=1.202610.6**. Automated tests, builds, artifact smoke checks and production-bundle Chromium checks passed against `1.202610.6`; live-host testing remains outstanding. See [compatibility results](compatibility.md) for the validation limits.
 
 ## Install the standalone package
 
@@ -47,6 +47,14 @@ For remote workspaces, install and enable the package on each target machine. Gi
 Comments render safe Markdown: raw HTML is displayed as text, images do not load, and links are limited to HTTP/HTTPS. Binary, truncated, very large sources (over 200,000 characters or 5,000 lines), and directories/change lists with over 2,000 entries are rejected rather than displaying incomplete selectable coordinates. Git must be installed. Git views show tracked changes; inspect untracked files in Files. Submodules are shown as Git's gitlink diff, not recursively expanded into another repository's file changes.
 
 Saved comments are local to this browser origin, keyed by machine, project, and workspace. They survive reloads and session changes; they are not synchronized across browsers or machines. IndexedDB transactions serialize concurrent saves and acknowledgements across tabs, so independent comments are not lost through competing read/modify/write operations. IndexedDB does not require HTTPS or Web Locks; LAN HTTP remains supported where the browser permits origin storage. Storage errors are shown and an unsuccessful save leaves the editor text available. Corrupt or unrecognized storage is not overwritten automatically. Feedback warnings remain separate from source-loading errors, survive panel/workspace remounts within the activation, and stay visible until explicitly dismissed.
+
+### Returning to Review and expanding context
+
+Switching from Review to chat and back in the same workspace retains the selected file, frozen comparison, draft, context setting, and code/document scroll position. Returning does not re-resolve comparison refs; use **Refresh** to read current content. This navigation state is in memory, not persisted across browser reloads, plugin reloads, or workspace switches.
+
+Git views offer **Diff context**: **3 lines**, **20 lines**, **100 lines**, or **Whole file**. Whole file includes unchanged surrounding lines with additions/deletions still highlighted, using the correct staged, unstaged, or frozen comparison endpoints—not the working file as a substitute. Existing size limits still apply; binary files cannot be expanded. Unchanged files have no Git diff to expand. Save or cancel the current draft before changing context. Display context alone does not mark saved comments stale. If a saved comment lies outside the current context, expand again before editing it.
+
+For the automated and visual review workflow, see [UI testing](ui-testing.md).
 
 ### Layout and phone controls
 
