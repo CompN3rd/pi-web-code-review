@@ -46,6 +46,17 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           tar -xzf release/*.tgz -C unpacked
           node scripts/check-artifacts.mjs "$PWD/unpacked/package"
+      - name: Dry-run publication without a source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          sandbox="$(mktemp -d)"
+          cp -R release "$sandbox/release"
+          cd "$sandbox"
+          packages=(./release/*.tgz)
+          test "${#packages[@]}" -eq 1
+          test -f "${packages[0]}"
+          npm publish "${packages[0]}" --dry-run --access public --ignore-scripts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: npm-package
@@ -84,6 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           npm --version
-          packages=(release/*.tgz)
+          packages=(./release/*.tgz)
           test "${#packages[@]}" -eq 1
+          test -f "${packages[0]}"
           npm publish "${packages[0]}" --access public --provenance --ignore-scripts
