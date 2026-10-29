@@ -1,12 +1,11 @@
-name: Publish to npm
+name: Stage npm release
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: npm-publish-${{ github.ref }}
@@ -14,10 +13,12 @@ concurrency:
 
 jobs:
   verify:
+    permissions:
+      contents: read
     if: github.repository == 'CompN3rd/pi-web-code-review'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -32,9 +33,10 @@ jobs:
           if (pkg.name !== '@compn3rd/pi-web-code-review' || lock.version !== pkg.version || lock.packages[''].version !== pkg.version) throw new Error('Package/lock mismatch');
           NODE
           git merge-base --is-ancestor HEAD origin/main
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+          package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run verify
@@ -46,7 +48,7 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           tar -xzf release/*.tgz -C unpacked
           node scripts/check-artifacts.mjs "$PWD/unpacked/package"
-      - name: Dry-run publication without a source checkout
+      - name: Validate isolated tarball publication shape (not authorization)
         shell: bash
         run: |
           set -euo pipefail
@@ -56,14 +58,14 @@ jobs:
           packages=(./release/*.tgz)
           test "${#packages[@]}" -eq 1
           test -f "${packages[0]}"
-          npm publish "${packages[0]}" --dry-run --access public --ignore-scripts
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          npm publish "${packages[0]}" --dry-run --access public --ignore-scripts --registry=https://registry.npmjs.org/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-package
           path: release/*.tgz
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-ui-screenshots
@@ -71,26 +73,26 @@ jobs:
           retention-days: 7
 
   publish:
+    name: Stage for npm maintainer 2FA approval
     needs: verify
     runs-on: ubuntu-latest
     environment: npm
     permissions:
-      contents: read
       id-token: write
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          registry-url: https://registry.npmjs.org
-      - name: Require an OIDC-capable npm CLI
+          package-manager-cache: false
+      - name: Require a staged-publishing-capable npm CLI
         shell: bash
         run: |
-          NPM_VERSION="$(npm --version)" node -e 'const [a,b,c] = process.env.NPM_VERSION.split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) throw new Error("npm >=11.5.1 required")'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          NPM_VERSION="$(npm --version)" node -e 'const [major,minor] = process.env.NPM_VERSION.split(".").map(Number); if (major < 11 || (major === 11 && minor < 15)) throw new Error("npm >=11.15.0 required for staged publishing")'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: npm-package
           path: release
-      - name: Publish verified tarball with OIDC and provenance
+      - name: Stage verified tarball with OIDC and provenance
         shell: bash
         run: |
           set -euo pipefail
@@ -98,4 +100,20 @@ jobs:
           packages=(./release/*.tgz)
           test "${#packages[@]}" -eq 1
           test -f "${packages[0]}"
-          npm publish "${packages[0]}" --access public --provenance --ignore-scripts
+          # No token fallback: a failed OIDC exchange must not masquerade as token auth.
+          if [ -n "${NODE_AUTH_TOKEN:-}" ] || [ -n "${NPM_TOKEN:-}" ] || [ -n "${NPM_ID_TOKEN:-}" ]; then
+            echo "::error::Unexpected token configuration in OIDC-only publication"
+            exit 1
+          fi
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          tar -xOf "${packages[0]}" package/package.json | node --input-type=module -e '
+            import fs from "node:fs";
+            const pkg = JSON.parse(fs.readFileSync(0, "utf8"));
+            if (pkg.name !== "@compn3rd/pi-web-code-review" || !/^\d+\.\d+\.\d+$/.test(pkg.version) || process.env.GITHUB_REF !== `refs/tags/v${pkg.version}`) throw new Error("Unexpected artifact name/version");
+            if (pkg.repository?.url !== "git+https://github.com/CompN3rd/pi-web-code-review.git") throw new Error("Unexpected artifact repository");
+          '
+          # npm reports OIDC exchange results at verbose level. Never dump env/JWTs.
+          npm stage publish "${packages[0]}" --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org/ --loglevel=verbose
+          echo '### Staged only — not published' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Review the stage reported above on npmjs.com and approve it with maintainer 2FA. Then verify the public version and provenance before publishing the GitHub release.' >> "$GITHUB_STEP_SUMMARY"

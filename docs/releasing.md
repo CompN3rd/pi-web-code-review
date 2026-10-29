@@ -2,42 +2,53 @@
 
 Package: `@compn3rd/pi-web-code-review` · repository: `CompN3rd/pi-web-code-review`.
 
-## Security model
+## Security model: stage with OIDC, approve on npm with 2FA
 
-`.github/workflows/publish.yml` runs on `v*` tag pushes (or manual dispatch **on a tag**, for retries). It rejects non-stable/mismatched package versions and commits outside `origin/main`. Actions are pinned to commit SHAs, checkout credentials are not persisted, and permissions default to read-only.
+`.github/workflows/publish.yml` (**Stage npm release**) runs on `v*` tag pushes or manual dispatch **on a tag**. It rejects non-stable/mismatched package versions and commits outside `origin/main`. Actions are pinned to current Node-24-native release SHAs; checkout credentials are not persisted. Permissions default to none; only verification gets repository read permission, and only staging gets `id-token: write`.
 
-The verification job installs with lifecycle scripts disabled, runs all tests/build/artifact and Chromium UI checks, packs the built package without rerunning lifecycle scripts, then smoke-tests the extracted tarball. The separate publish job downloads that exact run's artifact; it does not check out source, install project dependencies or run package scripts. Only that job receives `id-token: write`.
+The verification job installs with lifecycle scripts disabled, runs tests/build/artifact and Chromium checks, packs the verified build, and smoke-tests the extracted tarball. Its isolated `npm publish --dry-run` checks artifact handling only: it does **not** prove OIDC authentication, staging permission or publication permission.
 
-Publishing uses npm OIDC trusted publishing and provenance on a GitHub-hosted runner. **Do not add `NPM_TOKEN` or `NODE_AUTH_TOKEN` secrets.** Node 24 supplies the CLI; the workflow checks npm >=11.5.1. Publication is gated by the `npm` GitHub environment, with a required maintainer approval and tag-only deployment policy. Review uploaded screenshots and verification results before approving. This single-maintainer repository allows the triggering maintainer to approve; add another reviewer and prohibit self-review if the team grows. GitHub administrators retain their platform-level ability to change protections.
+The separate staging job downloads that same run's verified tarball. It does not check out source, install project dependencies, cache packages or execute package scripts. It validates the tarball's package name/version/repository before invoking `npm stage publish` with OIDC and provenance. **Do not add npm token secrets.** setup-node's token-oriented `registry-url` configuration is intentionally absent; the registry is explicit on the command line. No dummy token or deprecated `always-auth` configuration is used.
 
-## One-time owner setup
+The job requires npm **>=11.15.0** for staged publishing; Node 24 supplies the CLI. Its verbose npm output provides OIDC exchange diagnostics without intentionally printing credentials. Never dump environment variables, raw JWTs, or the npm debug/cache directory into logs or artifacts.
 
-The GitHub `npm` environment has been configured with `CompN3rd` as required reviewer and deployment policy **tag `v*` only**. Verify these settings under repository **Settings → Environments → npm** before the first publish.
+A successful workflow means **staged, not published**. An npm maintainer must review and approve the stage with **2FA** before the version becomes public. The workflow never runs `npm stage approve` and must not be granted direct publish or dist-tag permissions as a workaround.
 
-On npmjs.com, open **@compn3rd/pi-web-code-review → Settings → Trusted publishing** and add GitHub Actions:
+## Owner configuration
+
+The GitHub `npm` environment requires `CompN3rd` approval and allows **tags `v*` only**. Verify repository **Settings → Environments → npm**. This is a single-maintainer gate with self-review allowed; administrators retain their ability to change protections. Add independent reviewers if the team grows.
+
+The npm owner confirmed that the trusted publisher is configured for **staged publishing with 2FA approval**, not direct publication. In npm package **Settings → Trusted publishing**, the connection should match these case-sensitive fields:
 
 | Field | Exact value |
 | --- | --- |
+| Provider | GitHub Actions |
 | Organization or user | `CompN3rd` |
 | Repository | `pi-web-code-review` |
 | Workflow filename | `publish.yml` |
 | Environment name | `npm` |
-| Allowed action | Allow direct `npm publish` |
+| Allowed action | Stage only: `npm stage publish` |
 
-The workflow uses `npm publish`, not `npm stage publish`. If npm offers stage-only permission by default, explicitly enable direct publishing; approval is provided by the protected GitHub environment. Do not approve the GitHub deployment until npm-side trust is configured. Current npm policy requires the first successful publication within two days of creating a new trust configuration; recreate it if expired.
+Keep direct `npm publish` and dist-tag management disabled. A new unvalidated connection must complete its first successful publish within two days under current npm policy; inspect its status and recreate it if expired. An established validated connection does not expire every two days.
 
-After the first successful OIDC publish, set npm publishing access to **Require two-factor authentication and disallow tokens**, and revoke unused old automation tokens. This does not disable trusted publishing. Consider a GitHub tag ruleset restricting creation/update/deletion of `v*` tags to release maintainers. No branch or tag ruleset is created by this repository's workflow.
+Use npm **Require two-factor authentication and disallow tokens**, and revoke unused automation tokens after confirming OIDC works. This does not disable trusted publishing. Consider a tag ruleset restricting `v*` creation/update/deletion to release maintainers. The workflows do not create such a ruleset.
 
-Reference: [npm trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/).
+References: [trusted publishing](https://docs.npmjs.com/trusted-publishers/), [staged publishing](https://docs.npmjs.com/staged-publishing/).
 
 ## Release procedure
 
-1. Update package/lock versions together (`npm version minor --no-git-tag-version`, or an explicit version), changelog and release documentation.
-2. Run `npm run verify`, `npm run check:browser`, and inspect `artifacts/review-ui/`. Review live-host limitations in `docs/ui-testing.md`.
-3. Commit and push `main`. Create an annotated matching tag, for example `git tag -a v0.3.0 -m 'Release 0.3.0'`, then `git push origin v0.3.0`.
-4. In GitHub Actions → **Publish to npm**, wait for verification. Review `npm-package` and `release-ui-screenshots`, confirm npm trust setup, then approve the `npm` environment deployment.
-5. Confirm publication with `npm view @compn3rd/pi-web-code-review@0.3.0 version dist.integrity` and inspect npm provenance. Publish the GitHub release notes only after success.
+1. Update package/lock versions, changelog and documentation.
+2. Run `npm run verify`, `npm run check:browser`, and inspect screenshots. Live-host limitations remain in `docs/ui-testing.md`.
+3. Commit/push `main`, then create and push an annotated matching `v<version>` tag.
+4. Open GitHub Actions → **Stage npm release**. Review verification results and the `npm-package`/`release-ui-screenshots` artifacts. Approve the GitHub `npm` environment deployment.
+5. When staging succeeds, record the stage ID from npm output. Open npmjs.com **Staged Packages**, review the package/version/provenance and compare the staged tarball's integrity with the verified artifact. CLI alternatives are `npm stage view <stage-id>` and `npm stage download <stage-id>` using maintainer authentication.
+6. Approve on npmjs.com with **2FA**, or interactively use `npm stage approve <stage-id>`. Do not automate this proof-of-presence approval in GitHub.
+7. Confirm the exact public version and `dist.integrity` with `npm view @compn3rd/pi-web-code-review@<version> version dist.integrity`; verify provenance points to the intended commit/workflow. Only then publish the draft GitHub release.
 
-A failed run does not mean npm was unchanged: query the exact version before retrying. npm versions are immutable. If already published, do not move/recreate the tag or try overwriting the version; verify the existing integrity/provenance. Otherwise rerun the failed job or manually dispatch the workflow selecting the existing release tag. The workflow intentionally fails rather than silently treating an already-published version as success.
+## Failures and retries
 
-Publishing is separate from PI WEB installation. Do not restart the session daemon as part of this workflow.
+A failed job does not prove no registry state changed. Check the exact public version **and pending npm stages** before retrying, to avoid duplicate stages. A stage-only credential cannot be tested by trying direct publication. `npm whoami` and successful dry-runs are not OIDC permission checks. Provenance signing is independent of npm registry authorization.
+
+For auth failures inspect the verbose OIDC exchange result, then check trust identity, environment, permissions and expiry. Do not add a token, disable 2FA, or enable direct publish just to bypass a failure.
+
+Rerunning an old workflow uses the old tagged workflow revision, not new YAML on main. If workflow changes are required, use a new release version/tag or obtain explicit owner approval to move an unpublished tag. Never overwrite a published version. Publishing is separate from PI WEB installation; this workflow never restarts the daemon.

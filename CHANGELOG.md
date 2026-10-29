@@ -7,7 +7,7 @@
 - Retain file, frozen comparison, draft, context setting and desktop/mobile scroll when returning from chat to Review in the same workspace.
 - Git diff context selector: 3, 20, 100 lines or Whole file, with additions/deletions highlighted and saved-comment fingerprints independent of display context.
 - Reproducible production Chromium UI checks, screenshots and a GitHub Actions UI review workflow.
-- Approval-gated npm trusted publishing using GitHub OIDC, provenance, SHA-pinned actions and an isolated publish job consuming the tested tarball. No npm token secret is required.
+- Approval-gated npm staged publishing using GitHub OIDC, provenance, current SHA-pinned Node-24-native actions and an isolated staging job consuming the tested tarball. An npm maintainer approves with 2FA before publication; no npm token secret is required.
 - PI WEB community-discovery keywords (previously committed after 0.2.0 publication).
 
 ### Validation and limits
